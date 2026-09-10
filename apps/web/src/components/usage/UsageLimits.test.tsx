@@ -138,7 +138,7 @@ describe("LimitWindows pacing", () => {
 });
 
 describe("UsageLimitsPooled pacing", () => {
-  it("shows account-level reserve on a single-account pool without a legend", () => {
+  it("shows account-level reserve on a single-account pool and keeps the account row", () => {
     const markup = renderToStaticMarkup(
       <UsageLimitsPooled
         presentations={presentations([
@@ -155,7 +155,8 @@ describe("UsageLimitsPooled pacing", () => {
     expect(markup).toContain("24% in reserve");
     expect(markup).toContain("data-pace-readout");
     expect(markup).toContain('data-pace-mark="reserve"');
-    expect(markup).not.toContain("data-account-legend");
+    expect(markup).toContain("data-account-legend");
+    expect(markup).toContain("Personal");
   });
 
   it("keeps independent Claude reserve and Codex deficit on separate cards", () => {

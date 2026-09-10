@@ -229,7 +229,6 @@ function PoolSegment({
   color,
   now,
   index,
-  showIndex,
 }: {
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
@@ -238,7 +237,6 @@ function PoolSegment({
   readonly now: number;
   /** 1-based position in the bar, shown on the strip and its legend row to tie them together. */
   readonly index: number;
-  readonly showIndex: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const remaining = remainingPercent(window);
@@ -257,67 +255,60 @@ function PoolSegment({
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
               paceLine ? `, ${paceLine}` : ""
             }${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
-            className="relative h-5 min-w-0 cursor-pointer overflow-visible rounded-full bg-transparent text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
+            className="relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
       >
-        <div className="absolute inset-y-0.5 inset-x-0 overflow-hidden rounded-full bg-muted">
-          {/* Translucent so the label reads over the fill for any provider colour and theme. */}
+        {/* Translucent so the label reads over the fill for any provider colour and theme. */}
+        <div
+          aria-hidden
+          className="absolute inset-y-0 left-0 rounded-md opacity-35"
+          style={{ width: `${remaining}%`, backgroundColor: color }}
+        />
+        {/* The spent share is hatched, not blank: it is what the countdown restores. */}
+        {remaining < 100 && reset ? (
           <div
             aria-hidden
-            className="absolute inset-y-0 left-0 rounded-full opacity-35"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
+            className="absolute inset-y-0 right-0 opacity-20"
+            style={{
+              width: `${100 - remaining}%`,
+              backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
+            }}
           />
-          {/* The spent share is hatched, not blank: it is what the countdown restores. */}
-          {remaining < 100 && reset ? (
-            <div
-              aria-hidden
-              className="absolute inset-y-0 right-0 opacity-20"
-              style={{
-                width: `${100 - remaining}%`,
-                backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
-              }}
-            />
-          ) : null}
-        </div>
-        {detail ? <ExpectedPaceMark detail={detail} /> : null}
-        {showIndex ? (
-          <div className="relative z-20 hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
-            <AccountName
-              account={account}
-              className="min-w-0 truncate font-medium text-foreground"
-            />
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
-            {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
-            <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-[11px] text-foreground tabular-nums">
-              {resetsIn?.replace("resets in ", "↻ ") ?? ""}
-              {credits ? (
-                <>
-                  {resetsIn ? (
-                    <span aria-hidden className="text-muted-foreground">
-                      ·
-                    </span>
-                  ) : null}
-                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                    <TicketIcon className="size-3" aria-hidden />
-                    {credits}
-                  </span>
-                </>
-              ) : null}
-            </span>
-          </div>
         ) : null}
+        {detail ? <ExpectedPaceMark detail={detail} /> : null}
+        <span
+          aria-hidden
+          className="absolute inset-0 z-20 flex items-center justify-center text-[10px] leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+        >
+          {index}
+        </span>
+        <div className="relative z-20 hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
+          <AccountName
+            account={account}
+            className="min-w-0 truncate font-medium text-foreground"
+          />
+          <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+          {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
+          <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-[11px] text-foreground tabular-nums">
+            {resetsIn?.replace("resets in ", "↻ ") ?? ""}
+            {credits ? (
+              <>
+                {resetsIn ? (
+                  <span aria-hidden className="text-muted-foreground">
+                    ·
+                  </span>
+                ) : null}
+                <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                  <TicketIcon className="size-3" aria-hidden />
+                  {credits}
+                </span>
+              </>
+            ) : null}
+          </span>
+        </div>
       </PopoverTrigger>
-      {showIndex ? (
-        <LegendRow
-          account={account}
-          window={window}
-          color={color}
-          now={now}
-          index={index}
-          showIndex={showIndex}
-        />
-      ) : null}
+      <LegendRow account={account} window={window} color={color} now={now} index={index} />
       {account.redeem ? (
         <RedeemableSegmentPopup
           account={account}
@@ -354,46 +345,33 @@ function LegendRow({
   color,
   now,
   index,
-  showIndex,
 }: {
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
   readonly color: string;
   readonly now: number;
   readonly index: number;
-  readonly showIndex: boolean;
 }) {
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
-  const detail = paceDetail(window, now);
   return (
     <PopoverTrigger
       data-account-legend=""
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
       className="flex min-h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-start text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring @2xl/pool:hidden"
     >
-      {showIndex ? (
-        <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-[10px] leading-none font-semibold text-foreground/80 tabular-nums">
-          <span
-            aria-hidden
-            className="absolute inset-0 rounded-sm opacity-35"
-            style={{ backgroundColor: color }}
-          />
-          <span className="sr-only">Segment </span>
-          <span className="relative">{index}</span>
-        </span>
-      ) : null}
+      <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-[10px] leading-none font-semibold text-foreground/80 tabular-nums">
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-sm opacity-35"
+          style={{ backgroundColor: color }}
+        />
+        <span className="sr-only">Segment </span>
+        <span className="relative">{index}</span>
+      </span>
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
       <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
-      {detail ? (
-        <span
-          data-pace-readout=""
-          className="hidden min-w-0 truncate text-[11px] text-muted-foreground tabular-nums sm:inline"
-        >
-          {formatAllowancePace(detail).marker}
-        </span>
-      ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
         {resetsIn?.replace("resets in ", "↻ ") ?? ""}
         {credits ? (
@@ -482,7 +460,6 @@ function PoolBar({
   readonly now: number;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
-  const showIndex = pool.columns.length > 1;
   return (
     <div className="@container/pool min-w-0">
       <div
@@ -499,7 +476,6 @@ function PoolBar({
               color={color}
               now={now}
               index={position + 1}
-              showIndex={showIndex}
             />
           ) : null,
         )}
