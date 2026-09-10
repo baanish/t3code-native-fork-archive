@@ -40,7 +40,7 @@ function useBarColor(driver: Driver): string | null {
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
  * a colored pill sits at even pace when reserve or deficit is large enough.
- * Pace sits under the left edge, the countdown under the right.
+ * The pace chip rides the header row; the countdown sits under the bar.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;

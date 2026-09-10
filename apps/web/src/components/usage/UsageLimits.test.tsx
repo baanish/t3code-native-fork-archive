@@ -69,6 +69,7 @@ describe("UsageLimitsPacingHarness", () => {
   it("accepts only the named mock scenes", () => {
     expect(isLimitsPacingMockScene("reserve")).toBe(true);
     expect(isLimitsPacingMockScene("live")).toBe(false);
+    expect(isLimitsPacingMockScene("toString")).toBe(false);
   });
 });
 

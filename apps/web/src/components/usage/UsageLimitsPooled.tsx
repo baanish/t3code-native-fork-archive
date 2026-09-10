@@ -282,7 +282,7 @@ function PoolSegment({
         </div>
         {detail ? <ExpectedPaceMark detail={detail} /> : null}
         {showIndex ? (
-          <div className="relative hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
+          <div className="relative z-20 hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
             <AccountName
               account={account}
               className="min-w-0 truncate font-medium text-foreground"

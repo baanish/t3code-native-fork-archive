@@ -473,7 +473,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
     // Pace is per account. Averaging two clocks can cancel a reserve against a
     // deficit and read as "on pace" when neither account is.
-    const only = members.length === 1 ? members[0] : undefined;
+    const only = accounts.length === 1 ? members[0] : undefined;
     const detail = only ? paceDetail(only.window, now) : null;
     const resets = members
       .flatMap((member) => {
@@ -591,22 +591,19 @@ function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceSt
  * 100% used over `windowDurationMins` and ends at `resetsAt`. Expected use
  * is the elapsed share of that span; reserve or deficit is used minus that
  * expected value. Returns null when duration or reset is missing, the reset
- * is outside the window, usage exists before any time has elapsed, the clock
- * has barely started, the raw gap is inside the dead zone, or the inputs
- * are not finite.
+ * is outside the window, the clock has barely started, the raw gap is
+ * inside the dead zone, or the inputs are not finite.
  */
 export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
   const elapsed = elapsedShare(window, now);
   if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) return null;
   const usedPercent = clampPercent(window.usedPercent);
   if (usedPercent === null) return null;
-  if (elapsed === 0 && usedPercent > 0) return null;
   const expectedUsedPercent = elapsed * 100;
   const gap = usedPercent - expectedUsedPercent;
   if (!Number.isFinite(gap)) return null;
   if (Math.abs(gap) <= PACE_DEAD_ZONE) return null;
   const gapPercent = displayedPaceGap(gap);
-  if (gapPercent === 0) return null;
   const { pace, status } = paceFromGap(gapPercent);
   return {
     pace,
@@ -663,7 +660,7 @@ export function forecastFromObservations(
         used !== null &&
         Number.isFinite(observation.at) &&
         observation.at >= windowStart &&
-        observation.at <= Math.max(now, resetsAt)
+        observation.at <= now
       );
     })
     .map((observation) => ({

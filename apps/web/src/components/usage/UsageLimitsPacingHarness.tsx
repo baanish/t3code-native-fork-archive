@@ -26,7 +26,7 @@ const SCENES = {
 export type LimitsPacingMockScene = keyof typeof SCENES;
 
 export function isLimitsPacingMockScene(value: string | null): value is LimitsPacingMockScene {
-  return value !== null && value in SCENES;
+  return value !== null && Object.hasOwn(SCENES, value);
 }
 
 export function UsageLimitsPacingHarness({ scene }: { readonly scene: LimitsPacingMockScene }) {

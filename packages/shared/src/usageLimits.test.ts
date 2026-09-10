@@ -128,6 +128,9 @@ describe("pace", () => {
     expect(paceDetail({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(paceDetail({ ...window, windowDurationMins: 0 }, now)).toBeNull();
     expect(paceDetail({ ...window, resetsAt: "2026-09-03T16:55:00.000Z" }, now)).toBeNull();
+    expect(paceDetail({ ...window, resetsAt: "2026-09-03T16:50:00.000Z" }, now)).toMatchObject({
+      status: "deficit",
+    });
     expect(paceDetail(window, Date.parse("2026-09-03T14:00:00.000Z"))).toBeNull();
     expect(paceDetail({ ...window, resetsAt: "invalid" }, now)).toBeNull();
     // Reset further away than the declared duration: the window has not started.
@@ -248,6 +251,21 @@ describe("pace", () => {
     // Reset further than the window, or no time elapsed yet.
     expect(paceDetail(weekly(10, "1970-01-10T00:00:00.000Z"), origin)).toBeNull();
     expect(paceDetail(weekly(12, "1970-01-08T00:00:00.000Z"), origin)).toBeNull();
+  });
+
+  it("ignores observations after now when forecasting", () => {
+    const started = Date.parse("2026-09-03T10:00:00.000Z");
+    const later = Date.parse("2026-09-03T13:00:00.000Z");
+    expect(
+      forecastFromObservations(
+        { ...window, usedPercent: 20 },
+        [
+          { at: started, usedPercent: 20 },
+          { at: later, usedPercent: 80 },
+        ],
+        now,
+      ),
+    ).toBeNull();
   });
 
   it("does not invent a rate from one snapshot", () => {
@@ -1004,8 +1022,8 @@ describe("pools", () => {
       id: "seven_day",
       remainingPercent: 80,
       members: [{}],
-      pace: "under",
-      paceDetail: { status: "reserve" },
+      pace: null,
+      paceDetail: null,
     });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
     const mixed = collectLimitPools(
