@@ -17,6 +17,7 @@ import {
   paceDetail,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
@@ -77,7 +78,7 @@ export function ExpectedPaceMark({
       data-pace-mark={detail.status}
       aria-hidden
       className={cn(
-        "pointer-events-none absolute top-1/2 z-10 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-sm ring-1 ring-background",
+        "pointer-events-none absolute top-1/2 z-10 h-2.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-background",
         paceMarkClass(detail),
         className,
       )}
@@ -86,9 +87,10 @@ export function ExpectedPaceMark({
   );
 }
 
-/** Reserve or deficit only; the tooltip holds the allowance-check explanation. */
+/** Icon + gap percent on the existing quota line. Tooltip has the full phrase. */
 export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
   const readout = formatAllowancePace(detail);
+  const Icon = detail.status === "deficit" ? TrendingUpIcon : TrendingDownIcon;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -98,11 +100,12 @@ export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
-            className="inline-flex min-w-0 max-w-full text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex items-center gap-0.5 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
         }
       >
-        <span className="min-w-0 truncate tabular-nums">{readout.marker}</span>
+        <Icon className="size-3.5 shrink-0" aria-hidden />
+        <span className="tabular-nums">{readout.percent}</span>
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         {readout.explanation}
@@ -207,14 +210,14 @@ export function LimitWindows({
           <Fragment key={window.id}>
             <span className="flex min-w-0 items-center gap-2 text-xs">
               <span className="truncate text-muted-foreground">{window.label}</span>
-              <span className="ms-auto shrink-0 font-medium text-foreground tabular-nums">
+              <span className="ms-auto flex shrink-0 items-center gap-1.5 font-medium text-foreground tabular-nums">
                 {remainingPercent(window)}% left
+                {detail ? <PaceReadout detail={detail} /> : null}
               </span>
             </span>
             <WindowBar color={color} window={window} now={now} />
-            <span className="flex min-w-0 flex-col items-end justify-center gap-0.5 text-xs text-muted-foreground tabular-nums">
-              {detail ? <PaceReadout detail={detail} /> : null}
-              <span className="shrink-0 whitespace-nowrap">{resetsIn ?? ""}</span>
+            <span className="shrink-0 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              {resetsIn ?? ""}
             </span>
           </Fragment>
         );

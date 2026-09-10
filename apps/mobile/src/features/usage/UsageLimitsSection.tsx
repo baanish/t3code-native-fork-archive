@@ -50,15 +50,25 @@ function WindowRow(props: {
   const { window, now } = props;
   const remaining = remainingPercent(window);
   const detail = paceDetail(window, now);
-  const paceLine = detail ? formatAllowancePace(detail).marker : null;
+  const pace = detail ? formatAllowancePace(detail) : null;
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
       <View className="flex-row items-baseline justify-between gap-3">
         <Text className="text-sm text-foreground">{window.label}</Text>
-        <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-          {remaining}% left
-        </Text>
+        <View className="flex-row items-center gap-1.5">
+          <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+            {remaining}% left
+          </Text>
+          {pace ? (
+            <Text
+              className="text-xs tabular-nums text-foreground-tertiary"
+              accessibilityLabel={pace.explanation}
+            >
+              {pace.percent}
+            </Text>
+          ) : null}
+        </View>
       </View>
       <View className="h-3.5 justify-center">
         <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
@@ -81,23 +91,15 @@ function WindowRow(props: {
           <View
             className={
               detail.status === "deficit"
-                ? "absolute top-0 h-3.5 w-1.5 rounded-full bg-red-500"
-                : "absolute top-0 h-3.5 w-1.5 rounded-full bg-emerald-500"
+                ? "absolute top-0.5 h-2.5 w-1 rounded-full bg-red-500"
+                : "absolute top-0.5 h-2.5 w-1 rounded-full bg-emerald-500"
             }
-            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -3 }}
+            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -2 }}
           />
         ) : null}
       </View>
-      {paceLine || resetsIn ? (
-        <View className="flex-row justify-between gap-3">
-          <Text
-            className="min-w-0 flex-1 text-xs text-foreground-tertiary"
-            accessibilityLabel={detail ? formatAllowancePace(detail).explanation : undefined}
-          >
-            {paceLine ?? ""}
-          </Text>
-          <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
-        </View>
+      {resetsIn ? (
+        <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn}</Text>
       ) : null}
     </View>
   );

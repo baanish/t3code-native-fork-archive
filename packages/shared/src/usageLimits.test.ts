@@ -101,6 +101,7 @@ describe("pace", () => {
       evenSpendLastsUntilReset: false,
     });
     expect(formatAllowancePace(paceDetail(window, now)!).line).toBe("20% in reserve");
+    expect(formatAllowancePace(paceDetail(window, now)!).percent).toBe("20%");
     expect(formatAllowancePace(paceDetail({ ...window, usedPercent: 80 }, now)!).line).toBe(
       "20% in deficit",
     );

@@ -726,6 +726,8 @@ export function sessionWindowsUntilReset(
 
 export interface LimitPaceReadout {
   readonly marker: string;
+  /** Gap only, for the compact icon+percent chip. */
+  readonly percent: string;
   readonly verdict: string;
   readonly line: string;
   readonly explanation: string;
@@ -755,7 +757,7 @@ export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
   }
   const expected = Math.round(detail.expectedUsedPercent);
   const explanation = `${marker}. Even pace by now is ${expected}% used.`;
-  return { marker, verdict: marker, line: marker, explanation };
+  return { marker, percent: `${absGap}%`, verdict: marker, line: marker, explanation };
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

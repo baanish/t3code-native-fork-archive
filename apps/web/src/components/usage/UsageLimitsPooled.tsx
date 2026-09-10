@@ -524,8 +524,12 @@ function PoolWindowCard({
             {pool.remainingPercent}%
           </span>
           <span className="text-sm text-muted-foreground">left</span>
+          {pool.paceDetail ? (
+            <span className="self-center">
+              <PaceReadout detail={pool.paceDetail} />
+            </span>
+          ) : null}
         </span>
-        {pool.paceDetail ? <PaceReadout detail={pool.paceDetail} /> : null}
         {nextRefill ? (
           <span className="text-xs text-muted-foreground tabular-nums">
             <span className="font-medium text-foreground">↻ +{nextRefill.restoresPercent}%</span>{" "}
