@@ -197,7 +197,7 @@ function PoolWindowCard({
                 <Text className="text-sm font-t3-medium tabular-nums text-foreground">
                   {remainingPercent(window)}%
                 </Text>
-                {rowMarker && !paceReadout ? (
+                {rowMarker ? (
                   <Text className="text-xs text-foreground-tertiary">{rowMarker}</Text>
                 ) : null}
                 <View className="flex-row items-center gap-1">

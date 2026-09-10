@@ -749,6 +749,12 @@ describe("pools", () => {
       ["claudeAgent", 2],
       ["codex", 1],
     ]);
+    // One Codex account: card-level pace is the account's even-spend gap.
+    expect(pools[1]?.windows[0]).toMatchObject({
+      id: "seven_day",
+      pace: "under",
+      paceDetail: { status: "reserve", gapPercent: -7 },
+    });
     const [session, week] = pools[0]!.windows;
     // Two accounts in one pool: quota still averages, pace does not.
     const untimed = collectLimitPools(
