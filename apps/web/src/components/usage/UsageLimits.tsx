@@ -72,6 +72,7 @@ export function PaceReadout({
       <TooltipTrigger
         render={
           <span
+            data-pace-readout=""
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
@@ -79,10 +80,15 @@ export function PaceReadout({
           />
         }
       >
-        <Icon className="size-3.5 shrink-0" aria-hidden />
-        <span className="min-w-0 truncate tabular-nums">
-          {compact ? readout.marker : readout.line}
-        </span>
+        <Icon className="size-3.5 shrink-0 self-start" aria-hidden />
+        {compact ? (
+          <span className="min-w-0 truncate tabular-nums">{readout.marker}</span>
+        ) : (
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="tabular-nums">{readout.marker}</span>
+            <span>{readout.verdict}</span>
+          </span>
+        )}
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         {readout.explanation}

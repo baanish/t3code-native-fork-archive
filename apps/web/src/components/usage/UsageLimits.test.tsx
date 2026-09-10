@@ -121,6 +121,7 @@ describe("UsageLimitsPooled pacing", () => {
     expect(markup).toContain("Even spend lasts until reset");
     expect(markup).toContain("2 session-length windows until reset");
     expect(markup).toContain("Weekly · Fable");
+    expect(markup).toContain("data-pace-readout");
   });
 
   it("keeps independent accounts on separate pace readouts", () => {

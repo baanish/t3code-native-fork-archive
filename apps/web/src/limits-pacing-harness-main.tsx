@@ -15,17 +15,18 @@ import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 
 const params = new URLSearchParams(window.location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
+const hidePace = params.get("pace") === "off";
 const sceneParam = params.get("scene");
 const scene: LimitsPacingMockScene = isLimitsPacingMockScene(sceneParam) ? sceneParam : "reserve";
 
 document.documentElement.classList.toggle("dark", theme === "dark");
-document.documentElement.dataset.themeId = "t3-chat";
-document.documentElement.dataset.themeSelected = "true";
+document.documentElement.toggleAttribute("data-hide-pace", hidePace);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root");
 
-createRoot(root).render(
+const app = createRoot(root);
+app.render(
   <AppAtomRegistryProvider>
     <TooltipProvider>
       <div className="min-h-screen bg-background p-6 text-foreground">
@@ -34,6 +35,7 @@ createRoot(root).render(
             <h1 className="text-lg font-medium">Usage → Limits pacing</h1>
             <p className="text-xs text-muted-foreground">
               MOCK DATA · scene={scene} · theme={theme}
+              {hidePace ? " · pace hidden (previous Limits surface)" : ""}
             </p>
           </header>
           <UsageLimitsPacingHarness scene={scene} />
@@ -42,3 +44,4 @@ createRoot(root).render(
     </TooltipProvider>
   </AppAtomRegistryProvider>,
 );
+document.body.dataset.harnessReady = "true";

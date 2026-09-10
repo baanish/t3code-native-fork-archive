@@ -1,6 +1,7 @@
 /**
- * Development-only mount for Usage → Limits pacing screenshots. Gated on
- * `import.meta.env.DEV` and `?limitsPacingMock=`; never a production fallback.
+ * Development-only mount for Usage → Limits pacing screenshots. Served from
+ * `limits-pacing-harness.html` with `?scene=` / `?theme=` / `?pace=off`.
+ * Never a production fallback.
  */
 import {
   deficitPresentations,

@@ -386,7 +386,10 @@ function LegendRow({
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
       <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
       {detail ? (
-        <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground tabular-nums sm:inline">
+        <span
+          data-pace-readout=""
+          className="hidden min-w-0 truncate text-[11px] text-muted-foreground tabular-nums sm:inline"
+        >
           {formatAllowancePace(detail).marker}
         </span>
       ) : null}
