@@ -63,7 +63,8 @@ function paceMarkClass(detail: LimitPaceDetail): string {
 }
 
 /**
- * Rounded pill on the bar at even pace. Green is reserve, red is deficit.
+ * Thin tick on the bar at even pace. Green is reserve, red is deficit.
+ * Height stays at the track so it reads as a mark, not a shorter stub.
  * Near-even gaps never reach here — `paceDetail` is already null.
  */
 export function ExpectedPaceMark({
@@ -78,7 +79,7 @@ export function ExpectedPaceMark({
       data-pace-mark={detail.status}
       aria-hidden
       className={cn(
-        "pointer-events-none absolute top-1/2 z-10 h-2.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-background",
+        "pointer-events-none absolute top-1/2 z-10 h-3.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-background",
         paceMarkClass(detail),
         className,
       )}

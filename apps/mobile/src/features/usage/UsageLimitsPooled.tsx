@@ -149,10 +149,10 @@ function PoolWindowCard({
                   pointerEvents="none"
                   className={
                     rowPace.status === "deficit"
-                      ? "absolute top-1.5 h-4 w-1 rounded-full bg-red-500"
-                      : "absolute top-1.5 h-4 w-1 rounded-full bg-emerald-500"
+                      ? "absolute top-1.5 h-4 w-0.5 rounded-full bg-red-500"
+                      : "absolute top-1.5 h-4 w-0.5 rounded-full bg-emerald-500"
                   }
-                  style={{ left: `${evenPaceRemainingPercent(rowPace)}%`, marginLeft: -3 }}
+                  style={{ left: `${evenPaceRemainingPercent(rowPace)}%`, marginLeft: -1 }}
                 />
               ) : null}
               {showIndex ? (

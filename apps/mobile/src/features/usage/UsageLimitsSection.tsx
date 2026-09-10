@@ -91,10 +91,10 @@ function WindowRow(props: {
           <View
             className={
               detail.status === "deficit"
-                ? "absolute top-0.5 h-2.5 w-1 rounded-full bg-red-500"
-                : "absolute top-0.5 h-2.5 w-1 rounded-full bg-emerald-500"
+                ? "absolute top-0 h-3.5 w-0.5 rounded-full bg-red-500"
+                : "absolute top-0 h-3.5 w-0.5 rounded-full bg-emerald-500"
             }
-            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -2 }}
+            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -1 }}
           />
         ) : null}
       </View>
