@@ -158,8 +158,8 @@ function PoolWindowCard({
                   style={{
                     left: `${evenPaceRemainingPercent(rowPace)}%`,
                     marginLeft: -1,
-                    top: "-5%",
-                    height: "110%",
+                    top: "-10%",
+                    height: "120%",
                   }}
                 />
               ) : null}

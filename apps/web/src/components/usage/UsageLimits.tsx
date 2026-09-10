@@ -79,7 +79,7 @@ function paceReadoutClass(detail: LimitPaceDetail): string {
 
 /**
  * Thin tick on the bar at even pace. Green is reserve, red is deficit.
- * It overshoots the track by 5% on each side so it reads as a mark, not a stub.
+ * It overshoots the track by 10% on each side so it reads as a mark, not a stub.
  * Near-even gaps never reach here — `paceDetail` is already null.
  */
 export function ExpectedPaceMark({
@@ -94,7 +94,7 @@ export function ExpectedPaceMark({
       data-pace-mark={detail.status}
       aria-hidden
       className={cn(
-        "pointer-events-none absolute top-[-5%] z-10 h-[110%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background",
+        "pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background",
         paceMarkClass(detail),
         className,
       )}
