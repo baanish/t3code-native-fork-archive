@@ -64,8 +64,9 @@ describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
     expect(paceOf(window, now)).toBe("under");
-    expect(paceOf({ ...window, usedPercent: 60 }, now)).toBe("on");
-    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("ahead");
+    expect(paceOf({ ...window, usedPercent: 60 }, now)).toBeNull();
+    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBeNull();
+    expect(paceOf({ ...window, usedPercent: 63 }, now)).toBe("ahead");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
   });
 
@@ -91,22 +92,19 @@ describe("pace", () => {
       gapPercent: -20,
       evenSpendLastsUntilReset: true,
     });
-    expect(paceDetail({ ...window, usedPercent: 60 }, now)).toMatchObject({
-      status: "on",
-      gapPercent: 0,
-      evenSpendLastsUntilReset: true,
-    });
+    expect(paceDetail({ ...window, usedPercent: 58 }, now)).toBeNull();
+    expect(paceDetail({ ...window, usedPercent: 60 }, now)).toBeNull();
+    expect(paceDetail({ ...window, usedPercent: 62 }, now)).toBeNull();
     expect(paceDetail({ ...window, usedPercent: 80 }, now)).toMatchObject({
       status: "deficit",
       gapPercent: 20,
       evenSpendLastsUntilReset: false,
     });
-    expect(formatAllowancePace(paceDetail(window, now)!).line).toBe(
-      "20% in reserve · Even spend lasts until reset",
-    );
+    expect(formatAllowancePace(paceDetail(window, now)!).line).toBe("20% in reserve");
     expect(formatAllowancePace(paceDetail({ ...window, usedPercent: 80 }, now)!).line).toBe(
-      "20% in deficit · Even spend would run out before reset",
+      "20% in deficit",
     );
+    expect(formatAllowancePace(paceDetail(window, now)!).line).not.toContain("until reset");
   });
 
   it("matches the CodexBar-style session reserve example without copying its copy", () => {

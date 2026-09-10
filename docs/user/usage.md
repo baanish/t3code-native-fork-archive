@@ -47,9 +47,9 @@ first, or by the first available window when no account reports a 5-hour limit. 
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. When a window includes both a reset time and a
-duration, Limits also shows whether use is **in reserve**, **on pace**, or **in deficit** compared
-with even spending across that window. That comparison is an allowance check, not a forecast of
-how you will spend the rest of the window. Pace is omitted when the snapshot is too new, the
+duration, Limits marks **in reserve** or **in deficit** against even spending, and places a
+green or red pill on the bar at even pace. That comparison is an allowance check, not a forecast.
+Pace is omitted when use is within two points of even pace, the snapshot is too new, the
 window has already reset, or the provider did not report a duration. It is also omitted from a
 pooled total that mixes more than one account, so opposing reserve and deficit cannot cancel out.
 Tap a segment or account row for the account's plan,

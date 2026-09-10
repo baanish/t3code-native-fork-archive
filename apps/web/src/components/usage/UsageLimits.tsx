@@ -9,21 +9,18 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  elapsedShare,
+  evenPaceRemainingPercent,
   formatAllowancePace,
   formatDuration,
   formatResetsIn,
-  type LimitPace,
   type LimitPaceDetail,
   paceDetail,
   remainingPercent,
-  sessionWindowsUntilReset,
-  shortestSessionWindow,
 } from "@t3tools/shared/usageLimits";
-import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
+import { cn } from "../../lib/utils";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -42,12 +39,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
-const PACE_ICON: Record<LimitPace, typeof GaugeIcon> = {
-  ahead: TrendingUpIcon,
-  on: GaugeIcon,
-  under: TrendingDownIcon,
-};
-
 /** The series colour the cost chart uses for this driver, so the two views read as one. */
 export function barColor(driver: ServerProvider["driver"]): string {
   const kind: UsageProviderKind | undefined =
@@ -55,18 +46,49 @@ export function barColor(driver: ServerProvider["driver"]): string {
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 
-/** Even-spend pace as a readable marker; the tooltip holds the full explanation. */
-export function PaceReadout({
+function paceMarkClass(detail: LimitPaceDetail): string {
+  switch (detail.status) {
+    case "reserve":
+      return "bg-success";
+    case "deficit":
+      return "bg-destructive";
+    case "on":
+      return "bg-white";
+    default: {
+      const _exhaustive: never = detail.status;
+      throw new Error(`Unhandled pace status: ${_exhaustive}`);
+    }
+  }
+}
+
+/**
+ * Rounded pill on the bar at even pace. Green is reserve, red is deficit.
+ * Near-even gaps never reach here — `paceDetail` is already null.
+ */
+export function ExpectedPaceMark({
   detail,
-  sessionWindowsUntilReset: sessionWindows,
-  compact = false,
+  className,
 }: {
   readonly detail: LimitPaceDetail;
-  readonly sessionWindowsUntilReset?: number | null;
-  readonly compact?: boolean;
+  readonly className?: string;
 }) {
-  const readout = formatAllowancePace(detail, { sessionWindowsUntilReset: sessionWindows });
-  const Icon = PACE_ICON[detail.pace];
+  return (
+    <span
+      data-pace-mark={detail.status}
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute top-1/2 z-10 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-sm ring-1 ring-background",
+        paceMarkClass(detail),
+        className,
+      )}
+      style={{ left: `${evenPaceRemainingPercent(detail)}%` }}
+    />
+  );
+}
+
+/** Reserve or deficit only; the tooltip holds the allowance-check explanation. */
+export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
+  const readout = formatAllowancePace(detail);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -76,19 +98,11 @@ export function PaceReadout({
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
-            className="inline-flex min-w-0 max-w-full items-center gap-1 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex min-w-0 max-w-full text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
         }
       >
-        <Icon className="size-3.5 shrink-0 self-start" aria-hidden />
-        {compact ? (
-          <span className="min-w-0 truncate tabular-nums">{readout.marker}</span>
-        ) : (
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="tabular-nums">{readout.marker}</span>
-            <span>{readout.verdict}</span>
-          </span>
-        )}
+        <span className="min-w-0 truncate tabular-nums">{readout.marker}</span>
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         {readout.explanation}
@@ -99,9 +113,8 @@ export function PaceReadout({
 
 /**
  * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota spent; the hairline is how far into the
- * window the clock is, which is also where even spending would have put the
- * fill. Hover for the exact figures and reset time.
+ * The fill is the share of quota left. A green or red pill sits at even
+ * pace when reserve or deficit is large enough to show.
  */
 function WindowBar({
   color,
@@ -114,16 +127,15 @@ function WindowBar({
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  // The fill is quota left, so the even-spending mark is the time left.
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
+  const detail = paceDetail(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
     : null;
-  const summary = `${window.label}: ${remaining}% left${
-    timeLeft === null ? "" : `, ${timeLeft}% of the window left`
-  }${resetsIn ? `, ${resetsIn}` : ""}`;
+  const pace = detail ? formatAllowancePace(detail).marker : null;
+  const summary = `${window.label}: ${remaining}% left${pace ? `, ${pace}` : ""}${
+    resetsIn ? `, ${resetsIn}` : ""
+  }`;
 
   return (
     <Tooltip>
@@ -137,29 +149,21 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-        {remaining > 0 ? (
-          <div
-            className="absolute inset-y-1.5 left-0 rounded-full"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
-          />
-        ) : null}
-        {timeLeft !== null ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-0.5 w-px -translate-x-1/2 bg-foreground/60"
-            style={{ left: `${timeLeft}%` }}
-          />
-        ) : null}
+        <div className="absolute inset-x-0 inset-y-1.5 overflow-hidden rounded-full bg-muted">
+          {remaining > 0 ? (
+            <div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ width: `${remaining}%`, backgroundColor: color }}
+            />
+          ) : null}
+        </div>
+        {detail ? <ExpectedPaceMark detail={detail} /> : null}
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         <div className="flex flex-col gap-0.5">
           <span className="text-foreground">
-            {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
+            {remaining}% left{pace ? ` · ${pace}` : ""}
           </span>
-          {timeLeft !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
-          ) : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
               Resets {resetsAt}
@@ -188,7 +192,6 @@ export function LimitWindows({
   readonly compact?: boolean;
 }) {
   const color = barColor(driver);
-  const session = shortestSessionWindow(windows);
   return (
     <div
       className={
@@ -200,7 +203,6 @@ export function LimitWindows({
       {windows.map((window) => {
         const detail = paceDetail(window, now);
         const resetsIn = formatResetsIn(window, now);
-        const sessionWindows = sessionWindowsUntilReset(window, session, now);
         return (
           <Fragment key={window.id}>
             <span className="flex min-w-0 items-center gap-2 text-xs">
@@ -211,9 +213,7 @@ export function LimitWindows({
             </span>
             <WindowBar color={color} window={window} now={now} />
             <span className="flex min-w-0 flex-col items-end justify-center gap-0.5 text-xs text-muted-foreground tabular-nums">
-              {detail ? (
-                <PaceReadout detail={detail} sessionWindowsUntilReset={sessionWindows} compact />
-              ) : null}
+              {detail ? <PaceReadout detail={detail} /> : null}
               <span className="shrink-0 whitespace-nowrap">{resetsIn ?? ""}</span>
             </span>
           </Fragment>

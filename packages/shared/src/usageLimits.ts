@@ -545,9 +545,14 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
 const PACE_MIN_ELAPSED = 0.03;
 
 /**
+ * Hide pace when the rounded gap is this close to even. A 1–2 point drift is
+ * noise, not a reserve or deficit worth marking.
+ */
+const PACE_DEAD_ZONE = 2;
+
+/**
  * Usage against the clock. Spending evenly leaves the same share of quota as
- * there is time left in the window. The coarse `ahead` / `on` / `under` label
- * follows the rounded gap so a 2-point deficit is not hidden as "on pace".
+ * there is time left in the window. Gaps inside the dead zone have no pace.
  */
 export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
   return paceDetail(window, now)?.pace ?? null;
@@ -567,7 +572,8 @@ function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceSt
 /**
  * Even-spend comparison for one provider window. Returns null when the
  * provider omitted duration or reset, the window has already reset, the
- * clock has barely started, or the inputs are not finite.
+ * clock has barely started, the gap is inside the dead zone, or the
+ * inputs are not finite.
  */
 export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
   const elapsed = elapsedShare(window, now);
@@ -580,6 +586,7 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
   const gap = usedPercent - expectedUsedPercent;
   if (!Number.isFinite(gap)) return null;
   const gapPercent = Math.round(gap);
+  if (Math.abs(gapPercent) <= PACE_DEAD_ZONE) return null;
   const { pace, status } = paceFromGap(gapPercent);
   return {
     pace,
@@ -590,6 +597,11 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
     elapsedShare: elapsed,
     evenSpendLastsUntilReset: gapPercent <= 0,
   };
+}
+
+/** Where the remaining fill would sit if use matched elapsed time, 0..100. */
+export function evenPaceRemainingPercent(detail: LimitPaceDetail): number {
+  return Math.round((1 - detail.elapsedShare) * 100);
 }
 
 export interface UsageWindowObservation {
@@ -720,13 +732,10 @@ export interface LimitPaceReadout {
 }
 
 /**
- * Native copy for the even-spend readout. The verdict is the allowance check,
- * not an observed-rate forecast.
+ * Native copy for the even-spend readout. Visible text is only the reserve or
+ * deficit marker. Reset forecasts stay out of the line.
  */
-export function formatAllowancePace(
-  detail: LimitPaceDetail,
-  extras: { readonly sessionWindowsUntilReset?: number | null | undefined } = {},
-): LimitPaceReadout {
+export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
   const absGap = Math.abs(detail.gapPercent);
   let marker: string;
   switch (detail.status) {
@@ -744,24 +753,9 @@ export function formatAllowancePace(
       throw new Error(`Unhandled pace status: ${_exhaustive}`);
     }
   }
-  const verdict = detail.evenSpendLastsUntilReset
-    ? "Even spend lasts until reset"
-    : "Even spend would run out before reset";
-  const windows = extras.sessionWindowsUntilReset;
-  const extra =
-    windows !== undefined && windows !== null
-      ? ` · ${windows} session-length ${windows === 1 ? "window" : "windows"} until reset`
-      : "";
-  const line = `${marker} · ${verdict}${extra}`;
   const expected = Math.round(detail.expectedUsedPercent);
-  const explanation =
-    `${marker}. Compared with even spending across this window, expected use by now is ${expected}%. ` +
-    `${verdict}. This is an allowance check, not a forecast of future use.${
-      extra
-        ? ` Time remaining covers ${windows} full session-length ${windows === 1 ? "window" : "windows"}.`
-        : ""
-    }`;
-  return { marker, verdict, line, explanation };
+  const explanation = `${marker}. Even pace by now is ${expected}% used.`;
+  return { marker, verdict: marker, line: marker, explanation };
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

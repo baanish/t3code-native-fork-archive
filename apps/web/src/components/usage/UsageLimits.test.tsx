@@ -73,10 +73,10 @@ describe("UsageLimitsPacingHarness", () => {
 });
 
 describe("LimitWindows pacing", () => {
-  it("renders reserve, even-spend verdict, and session-length windows on weekly", () => {
+  it("renders reserve copy and a pace mark without reset verdicts", () => {
     const markup = renderToStaticMarkup(
       <LimitWindows
-        driver={ProviderDriverKind.make("codex")}
+        driver={ProviderDriverKind.make("claudeAgent")}
         windows={[...reserveWindows]}
         now={PACING_FIXTURE_NOW}
       />,
@@ -87,8 +87,9 @@ describe("LimitWindows pacing", () => {
     expect(markup).toContain("55% in reserve");
     expect(markup).toContain("41% left");
     expect(markup).toContain("32% in reserve");
-    expect(markup).toContain("Even spend lasts until reset");
-    expect(markup).toContain("2 full session-length windows");
+    expect(markup).toContain("data-pace-mark");
+    expect(markup).not.toContain("Even spend");
+    expect(markup).not.toContain("until reset");
     expect(markup).not.toContain("35% risk");
     expect(markup).not.toContain("session quotas left");
   });
@@ -118,25 +119,29 @@ describe("UsageLimitsPooled pacing", () => {
       <UsageLimitsPooled presentations={reservePresentations()} now={PACING_FIXTURE_NOW} />,
     );
     expect(markup).toContain("24% in reserve");
-    expect(markup).toContain("Even spend lasts until reset");
-    expect(markup).toContain("2 session-length windows until reset");
     expect(markup).toContain("Weekly · Fable");
     expect(markup).toContain("data-pace-readout");
+    expect(markup).toContain('data-pace-mark="reserve"');
+    expect(markup).not.toContain("Even spend");
+    expect(markup).not.toContain("until reset");
   });
 
-  it("keeps independent accounts on separate pace readouts", () => {
+  it("keeps independent Claude reserve and Codex deficit on separate cards", () => {
     const presentations = independentAccountPresentations();
     const pools = collectLimitPools(collectLimitAccounts(presentations), PACING_FIXTURE_NOW);
     expect(pools).toHaveLength(2);
-    expect(pools[0]?.windows.some((window) => window.paceDetail?.status === "reserve")).toBe(true);
-    expect(pools[1]?.windows.some((window) => window.paceDetail?.status === "deficit")).toBe(true);
+    const claude = pools.find((pool) => pool.driver === "claudeAgent");
+    const codex = pools.find((pool) => pool.driver === "codex");
+    expect(claude?.windows.some((window) => window.paceDetail?.status === "reserve")).toBe(true);
+    expect(codex?.windows.some((window) => window.paceDetail?.status === "deficit")).toBe(true);
 
     const markup = renderToStaticMarkup(
       <UsageLimitsPooled presentations={presentations} now={PACING_FIXTURE_NOW} />,
     );
     expect(markup).toContain("24% in reserve");
     expect(markup).toContain("20% in deficit");
-    expect(markup).toContain("Even spend would run out before reset");
+    expect(markup).toContain("Weekly · Fable");
+    expect(markup).not.toContain("Even spend");
   });
 
   it("renders deficit, zero, exhausted, and on-pace without NaN", () => {
@@ -147,9 +152,11 @@ describe("UsageLimitsPooled pacing", () => {
       <UsageLimitsPooled presentations={edgePresentations()} now={PACING_FIXTURE_NOW} />,
     );
     expect(deficit).toContain("20% in deficit");
+    expect(deficit).toContain('data-pace-mark="deficit"');
     expect(edges).toContain("60% in reserve");
     expect(edges).toContain("40% in deficit");
-    expect(edges).toContain("On pace");
+    expect(edges).toContain("Matched");
+    expect(edges).not.toContain("On pace");
     expect(deficit + edges).not.toMatch(/NaN|Infinity/);
   });
 

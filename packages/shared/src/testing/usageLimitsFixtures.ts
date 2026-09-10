@@ -41,9 +41,9 @@ function windowOf(
 }
 
 /**
- * Screenshot-shaped session: 49% left, 1h 15m of a 5h window → 24% reserve.
+ * Claude-shaped session: 49% left, 1h 15m of a 5h window → 24% reserve.
  * Weekly: 64% left, 14h 55m of a 7d window → 55% reserve.
- * Model-specific weekly: 41% left on the same clock → 32% reserve.
+ * Model-specific weekly (Fable): 41% left on the same clock → 32% reserve.
  */
 export const reserveWindows = [
   windowOf({
@@ -197,10 +197,12 @@ function presentation(
   ]);
 }
 
-/** One Codex account with session, weekly, and model-specific reserve. */
+/** Claude reports session, weekly, and model-specific Fable windows. */
 export function reservePresentations(): LimitsPresentationMap {
   return presentation("env-a", "Laptop", [
     provider({
+      instanceId: ProviderInstanceId.make("claude"),
+      driver: ProviderDriverKind.make("claudeAgent"),
       displayName: "Personal",
       auth: { status: "authenticated", email: "mock-reserve@example.com" },
       usageLimits: { checkedAt: CHECKED_AT, windows: [...reserveWindows] },
@@ -208,17 +210,17 @@ export function reservePresentations(): LimitsPresentationMap {
   ]);
 }
 
-/** Independent Codex and Claude accounts so pacing cannot be pooled together. */
+/** Independent Claude reserve and Codex deficit so pacing cannot be pooled. */
 export function independentAccountPresentations(): LimitsPresentationMap {
   return presentation("env-a", "Laptop", [
     provider({
+      instanceId: ProviderInstanceId.make("claude"),
+      driver: ProviderDriverKind.make("claudeAgent"),
       displayName: "Personal",
       auth: { status: "authenticated", email: "mock-reserve@example.com" },
       usageLimits: { checkedAt: CHECKED_AT, windows: [...reserveWindows] },
     }),
     provider({
-      instanceId: ProviderInstanceId.make("claude"),
-      driver: ProviderDriverKind.make("claudeAgent"),
       displayName: "Work",
       auth: { status: "authenticated", email: "mock-deficit@example.com" },
       usageLimits: { checkedAt: CHECKED_AT, windows: [...deficitWindows] },
@@ -229,7 +231,7 @@ export function independentAccountPresentations(): LimitsPresentationMap {
 export function deficitPresentations(): LimitsPresentationMap {
   return presentation("env-a", "Laptop", [
     provider({
-      displayName: "Deficit",
+      displayName: "Personal",
       auth: { status: "authenticated", email: "mock-deficit@example.com" },
       usageLimits: { checkedAt: CHECKED_AT, windows: [...deficitWindows] },
     }),
@@ -267,7 +269,7 @@ export function edgePresentations(): LimitsPresentationMap {
     }),
     provider({
       instanceId: ProviderInstanceId.make("codex-on"),
-      displayName: "On pace",
+      displayName: "Matched",
       auth: { status: "authenticated", email: "mock-on@example.com" },
       usageLimits: { checkedAt: CHECKED_AT, windows: [...onPaceWindows] },
     }),

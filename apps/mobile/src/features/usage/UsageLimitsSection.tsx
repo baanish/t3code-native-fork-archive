@@ -9,15 +9,13 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
-  elapsedShare,
+  evenPaceRemainingPercent,
   formatAllowancePace,
   formatDuration,
   formatResetsIn,
   limitsNotice,
   paceDetail,
   remainingPercent,
-  sessionWindowsUntilReset,
-  shortestSessionWindow,
 } from "@t3tools/shared/usageLimits";
 import { type ReactNode, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
@@ -41,26 +39,18 @@ function useBarColor(driver: Driver): string | null {
 
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
- * the hairline is how much of the window is left, so even spending keeps the
- * fill on the line. Pace sits under the left edge, the countdown under the
- * right, so a row reads in one glance.
+ * a colored pill sits at even pace when reserve or deficit is large enough.
+ * Pace sits under the left edge, the countdown under the right.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
   readonly color: string | null;
   readonly now: number;
-  readonly sessionWindowsUntilReset?: number | null;
 }) {
   const { window, now } = props;
   const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
   const detail = paceDetail(window, now);
-  const paceLine = detail
-    ? formatAllowancePace(detail, {
-        sessionWindowsUntilReset: props.sessionWindowsUntilReset,
-      }).line
-    : null;
+  const paceLine = detail ? formatAllowancePace(detail).marker : null;
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
@@ -70,7 +60,7 @@ function WindowRow(props: {
           {remaining}% left
         </Text>
       </View>
-      <View className="h-3 justify-center">
+      <View className="h-3.5 justify-center">
         <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
           <View
             className={
@@ -87,10 +77,14 @@ function WindowRow(props: {
           />
           <View style={{ flex: 100 - remaining }} />
         </View>
-        {timeLeft !== null ? (
+        {detail ? (
           <View
-            className="absolute top-0 bottom-0 w-px bg-foreground"
-            style={{ left: `${timeLeft}%`, opacity: 0.6 }}
+            className={
+              detail.status === "deficit"
+                ? "absolute top-0 h-3.5 w-1.5 rounded-full bg-red-500"
+                : "absolute top-0 h-3.5 w-1.5 rounded-full bg-emerald-500"
+            }
+            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -3 }}
           />
         ) : null}
       </View>
@@ -98,13 +92,7 @@ function WindowRow(props: {
         <View className="flex-row justify-between gap-3">
           <Text
             className="min-w-0 flex-1 text-xs text-foreground-tertiary"
-            accessibilityLabel={
-              detail
-                ? formatAllowancePace(detail, {
-                    sessionWindowsUntilReset: props.sessionWindowsUntilReset,
-                  }).explanation
-                : undefined
-            }
+            accessibilityLabel={detail ? formatAllowancePace(detail).explanation : undefined}
           >
             {paceLine ?? ""}
           </Text>
@@ -184,17 +172,7 @@ export function AccountLimits(props: {
       ) : (
         <View className="gap-3">
           {limits.windows.map((window) => (
-            <WindowRow
-              key={window.id}
-              window={window}
-              color={color}
-              now={now}
-              sessionWindowsUntilReset={sessionWindowsUntilReset(
-                window,
-                shortestSessionWindow(limits.windows),
-                now,
-              )}
-            />
+            <WindowRow key={window.id} window={window} color={color} now={now} />
           ))}
         </View>
       )}
