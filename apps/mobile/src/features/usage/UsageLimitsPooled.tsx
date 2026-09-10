@@ -166,59 +166,63 @@ function PoolWindowCard({
           );
         })}
       </View>
-      <View>
-        {pool.columns.map(({ account, window }, index) => {
-          if (!window) return null;
-          const credits = account.limits.resetCredits?.availableCount ?? 0;
-          const resetsIn = formatResetsIn(window, now);
-          const rowPace = paceDetail(window, now);
-          const rowMarker = rowPace ? formatAllowancePace(rowPace).marker : null;
-          return (
-            <Pressable
-              key={account.key}
-              accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${rowMarker ? `, ${rowMarker}` : ""}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
-              accessibilityHint="Show account details"
-              onPress={() => openAccount(account)}
-              className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
-            >
-              <View className="size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
-                <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                  {index + 1}
-                </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+      {pool.columns.length > 1 ? (
+        <View>
+          {pool.columns.map(({ account, window }, index) => {
+            if (!window) return null;
+            const credits = account.limits.resetCredits?.availableCount ?? 0;
+            const resetsIn = formatResetsIn(window, now);
+            const rowPace = paceDetail(window, now);
+            const rowMarker = rowPace ? formatAllowancePace(rowPace).marker : null;
+            return (
+              <Pressable
+                key={account.key}
+                accessibilityRole="button"
+                accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${rowMarker ? `, ${rowMarker}` : ""}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
+                accessibilityHint="Show account details"
+                onPress={() => openAccount(account)}
+                className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
               >
-                {accountName(account)}
-              </Text>
-              <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-                {remainingPercent(window)}%
-              </Text>
-              {rowMarker && !paceReadout ? (
-                <Text className="text-xs text-foreground-tertiary">{rowMarker}</Text>
-              ) : null}
-              <View className="flex-row items-center gap-1">
-                {resetsIn ? (
-                  <Text className="text-xs tabular-nums text-foreground-muted">
-                    {resetsIn.replace("resets in ", "↻ ")}
+                <View className="size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
+                  <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                    {index + 1}
                   </Text>
+                </View>
+                <Text
+                  numberOfLines={1}
+                  className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                >
+                  {accountName(account)}
+                </Text>
+                <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+                  {remainingPercent(window)}%
+                </Text>
+                {rowMarker && !paceReadout ? (
+                  <Text className="text-xs text-foreground-tertiary">{rowMarker}</Text>
                 ) : null}
-                {credits ? (
-                  <>
-                    {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
-                    <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
-                    <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                      {credits}
+                <View className="flex-row items-center gap-1">
+                  {resetsIn ? (
+                    <Text className="text-xs tabular-nums text-foreground-muted">
+                      {resetsIn.replace("resets in ", "↻ ")}
                     </Text>
-                  </>
-                ) : null}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+                  ) : null}
+                  {credits ? (
+                    <>
+                      {resetsIn ? (
+                        <Text className="text-xs text-foreground-tertiary">·</Text>
+                      ) : null}
+                      <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
+                      <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                        {credits}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }

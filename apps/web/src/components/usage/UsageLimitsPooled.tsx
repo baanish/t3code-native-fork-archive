@@ -281,36 +281,43 @@ function PoolSegment({
           ) : null}
         </div>
         {detail ? <ExpectedPaceMark detail={detail} /> : null}
-        <div className="relative hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
-          <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
-          <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
-          {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
-          <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-[11px] text-foreground tabular-nums">
-            {resetsIn?.replace("resets in ", "↻ ") ?? ""}
-            {credits ? (
-              <>
-                {resetsIn ? (
-                  <span aria-hidden className="text-muted-foreground">
-                    ·
+        {showIndex ? (
+          <div className="relative hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
+            <AccountName
+              account={account}
+              className="min-w-0 truncate font-medium text-foreground"
+            />
+            <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+            {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
+            <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-[11px] text-foreground tabular-nums">
+              {resetsIn?.replace("resets in ", "↻ ") ?? ""}
+              {credits ? (
+                <>
+                  {resetsIn ? (
+                    <span aria-hidden className="text-muted-foreground">
+                      ·
+                    </span>
+                  ) : null}
+                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                    <TicketIcon className="size-3" aria-hidden />
+                    {credits}
                   </span>
-                ) : null}
-                <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                  <TicketIcon className="size-3" aria-hidden />
-                  {credits}
-                </span>
-              </>
-            ) : null}
-          </span>
-        </div>
+                </>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
       </PopoverTrigger>
-      <LegendRow
-        account={account}
-        window={window}
-        color={color}
-        now={now}
-        index={index}
-        showIndex={showIndex}
-      />
+      {showIndex ? (
+        <LegendRow
+          account={account}
+          window={window}
+          color={color}
+          now={now}
+          index={index}
+          showIndex={showIndex}
+        />
+      ) : null}
       {account.redeem ? (
         <RedeemableSegmentPopup
           account={account}
@@ -362,6 +369,7 @@ function LegendRow({
   const detail = paceDetail(window, now);
   return (
     <PopoverTrigger
+      data-account-legend=""
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
       className="flex min-h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-start text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring @2xl/pool:hidden"
     >

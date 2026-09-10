@@ -124,6 +124,7 @@ describe("UsageLimitsPooled pacing", () => {
     expect(markup).toContain("Weekly · Fable");
     expect(markup).toContain("data-pace-readout");
     expect(markup).toContain('data-pace-mark="reserve"');
+    expect(markup).not.toContain("data-account-legend");
     expect(markup).not.toContain("Even spend");
     expect(markup).not.toContain("until reset");
   });
