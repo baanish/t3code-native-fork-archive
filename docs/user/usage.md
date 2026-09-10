@@ -55,7 +55,7 @@ provider pool has more than one account, even if only one of them reports that w
 opposing reserve and deficit cannot cancel out.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex accounts with banked
-reset credits show a ticket count and the **Use reset** action in the account details. When more than one account shares a bar, numbered rows below
+reset credits show a ticket count and the **Use reset** action in the account details. On narrow screens, when more than one account shares a bar, numbered rows below
 it show each account's quota, countdown, and credits. Tap a row to open its details.
 
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
