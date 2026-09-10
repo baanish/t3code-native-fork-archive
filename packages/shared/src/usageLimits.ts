@@ -529,13 +529,20 @@ function resetMillis(window: ServerProviderUsageWindow): number | null {
   return Number.isFinite(at) ? at : null;
 }
 
-/** Elapsed share of the window, 0..1, or null when its length or reset is unknown. */
+/**
+ * How far the window has run, 0..1. Needs both a reset and a duration: the
+ * countdown says when it ends, the duration says how long it is. Null when
+ * either is missing, the clock has already reset, or the reset is further
+ * away than the declared length (the window has not started).
+ */
 export function elapsedShare(window: ServerProviderUsageWindow, now: number): number | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null || window.windowDurationMins === undefined) return null;
   const length = window.windowDurationMins * MINUTE;
-  if (length <= 0) return null;
-  return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+  if (length <= 0 || !Number.isFinite(now)) return null;
+  const timeUntilReset = resetsAt - now;
+  if (timeUntilReset <= 0 || timeUntilReset > length) return null;
+  return (length - timeUntilReset) / length;
 }
 
 /**
@@ -545,10 +552,20 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
 const PACE_MIN_ELAPSED = 0.03;
 
 /**
- * Hide pace when the rounded gap is this close to even. A 1–2 point drift is
- * noise, not a reserve or deficit worth marking.
+ * Hide pace when the raw used-vs-expected gap is this close to even. A 1–2
+ * point drift is noise, not a reserve or deficit worth marking.
  */
 const PACE_DEAD_ZONE = 2;
+
+/**
+ * Signed whole-point gap: absolute value first, then round. Rounding the
+ * signed gap in JavaScript pulls negative halves toward zero (`-7.5` → `-7`)
+ * and understates reserve.
+ */
+function displayedPaceGap(delta: number): number {
+  if (!Number.isFinite(delta) || delta === 0) return 0;
+  return Math.sign(delta) * Math.round(Math.abs(delta));
+}
 
 /**
  * Usage against the clock. Spending evenly leaves the same share of quota as
@@ -570,23 +587,26 @@ function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceSt
 }
 
 /**
- * Even-spend comparison for one provider window. Returns null when the
- * provider omitted duration or reset, the window has already reset, the
- * clock has barely started, the gap is inside the dead zone, or the
- * inputs are not finite.
+ * Even-spend comparison for one provider window. The window runs from 0% to
+ * 100% used over `windowDurationMins` and ends at `resetsAt`. Expected use
+ * is the elapsed share of that span; reserve or deficit is used minus that
+ * expected value. Returns null when duration or reset is missing, the reset
+ * is outside the window, usage exists before any time has elapsed, the clock
+ * has barely started, the raw gap is inside the dead zone, or the inputs
+ * are not finite.
  */
 export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
   const elapsed = elapsedShare(window, now);
   if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) return null;
-  const resetsAt = resetMillis(window);
-  if (resetsAt !== null && resetsAt <= now) return null;
   const usedPercent = clampPercent(window.usedPercent);
   if (usedPercent === null) return null;
+  if (elapsed === 0 && usedPercent > 0) return null;
   const expectedUsedPercent = elapsed * 100;
   const gap = usedPercent - expectedUsedPercent;
   if (!Number.isFinite(gap)) return null;
-  const gapPercent = Math.round(gap);
-  if (Math.abs(gapPercent) <= PACE_DEAD_ZONE) return null;
+  if (Math.abs(gap) <= PACE_DEAD_ZONE) return null;
+  const gapPercent = displayedPaceGap(gap);
+  if (gapPercent === 0) return null;
   const { pace, status } = paceFromGap(gapPercent);
   return {
     pace,
@@ -595,7 +615,7 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
     expectedUsedPercent,
     usedPercent,
     elapsedShare: elapsed,
-    evenSpendLastsUntilReset: gapPercent <= 0,
+    evenSpendLastsUntilReset: gap <= 0,
   };
 }
 

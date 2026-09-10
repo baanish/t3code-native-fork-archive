@@ -130,6 +130,17 @@ describe("pace", () => {
     expect(paceDetail({ ...window, resetsAt: "2026-09-03T16:55:00.000Z" }, now)).toBeNull();
     expect(paceDetail(window, Date.parse("2026-09-03T14:00:00.000Z"))).toBeNull();
     expect(paceDetail({ ...window, resetsAt: "invalid" }, now)).toBeNull();
+    // Reset further away than the declared duration: the window has not started.
+    expect(paceDetail({ ...window, resetsAt: "2026-09-03T18:00:00.000Z" }, now)).toBeNull();
+    expect(elapsedShare({ ...window, resetsAt: "2026-09-03T18:00:00.000Z" }, now)).toBeNull();
+    // Usage with a reset exactly at the far end: elapsed is zero.
+    expect(
+      paceDetail(
+        { ...window, usedPercent: 12, resetsAt: "2026-09-03T17:00:00.000Z" },
+        now,
+      ),
+    ).toBeNull();
+    expect(elapsedShare({ ...window, resetsAt: "2026-09-03T17:00:00.000Z" }, now)).toBe(0);
   });
 
   it("treats zero usage and a fully used window as reserve and deficit", () => {
@@ -142,6 +153,101 @@ describe("pace", () => {
       gapPercent: 40,
       evenSpendLastsUntilReset: false,
     });
+  });
+
+  it("rounds the displayed gap from the absolute delta so reserve halves are not pulled toward zero", () => {
+    // 60.5% elapsed of 300 minutes leaves 118.5 minutes; used 53% → raw −7.5.
+    const half = {
+      ...window,
+      usedPercent: 53,
+      resetsAt: "2026-09-03T13:58:30.000Z",
+    };
+    expect(elapsedShare(half, now)).toBeCloseTo(0.605);
+    expect(paceDetail(half, now)).toMatchObject({
+      status: "reserve",
+      gapPercent: -8,
+    });
+    expect(formatAllowancePace(paceDetail(half, now)!).line).toBe("8% in reserve");
+  });
+
+  it("matches CodexBar even-spend vectors for weekly and session windows", () => {
+    const origin = Date.parse("1970-01-01T00:00:00.000Z");
+    const weekMins = 7 * 24 * 60;
+    const sessionMins = 5 * 60;
+
+    function weekly(usedPercent: number, resetsAt: string) {
+      return {
+        ...window,
+        kind: "weekly" as const,
+        label: "Weekly",
+        usedPercent,
+        windowDurationMins: weekMins,
+        resetsAt,
+      };
+    }
+
+    function session(usedPercent: number, resetsAt: string) {
+      return {
+        ...window,
+        usedPercent,
+        windowDurationMins: sessionMins,
+        resetsAt,
+      };
+    }
+
+    const inFourDays = "1970-01-05T00:00:00.000Z";
+    const inThreeDays = "1970-01-04T00:00:00.000Z";
+    const inTwoDaysNineteenHours = "1970-01-03T19:00:00.000Z";
+    const inPointSevenDays = "1970-01-01T16:48:00.000Z";
+    const inTwoHours = "1970-01-01T02:00:00.000Z";
+
+    // 50% used, 4d of 7d left → expected 42.857 → 7% deficit
+    expect(paceDetail(weekly(50, inFourDays), origin)).toMatchObject({
+      status: "deficit",
+      gapPercent: 7,
+    });
+    expect(formatAllowancePace(paceDetail(weekly(50, inFourDays), origin)!).line).toBe(
+      "7% in deficit",
+    );
+
+    // 10% used, 4d of 7d left → 33% reserve
+    expect(formatAllowancePace(paceDetail(weekly(10, inFourDays), origin)!).line).toBe(
+      "33% in reserve",
+    );
+
+    // 20% used, 3d of 7d left → 37% reserve
+    expect(formatAllowancePace(paceDetail(weekly(20, inThreeDays), origin)!).line).toBe(
+      "37% in reserve",
+    );
+
+    // 70% used, 0.7d of 7d left → expected 90 → 20% reserve
+    expect(formatAllowancePace(paceDetail(weekly(70, inPointSevenDays), origin)!).line).toBe(
+      "20% in reserve",
+    );
+
+    // 88% used, 2d 19h of 7d left → 28% deficit
+    expect(formatAllowancePace(paceDetail(weekly(88, inTwoDaysNineteenHours), origin)!).line).toBe(
+      "28% in deficit",
+    );
+
+    // 80% used, 2h of 5h left → expected 60 → 20% deficit
+    expect(formatAllowancePace(paceDetail(session(80, inTwoHours), origin)!).line).toBe(
+      "20% in deficit",
+    );
+
+    // 10% used, 2h of 5h left → 50% reserve
+    expect(formatAllowancePace(paceDetail(session(10, inTwoHours), origin)!).line).toBe(
+      "50% in reserve",
+    );
+
+    // 50% used, 2h of 5h left → 10% reserve
+    expect(formatAllowancePace(paceDetail(session(50, inTwoHours), origin)!).line).toBe(
+      "10% in reserve",
+    );
+
+    // Reset further than the window, or no time elapsed yet.
+    expect(paceDetail(weekly(10, "1970-01-10T00:00:00.000Z"), origin)).toBeNull();
+    expect(paceDetail(weekly(12, "1970-01-08T00:00:00.000Z"), origin)).toBeNull();
   });
 
   it("does not invent a rate from one snapshot", () => {
