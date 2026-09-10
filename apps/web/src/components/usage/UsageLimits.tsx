@@ -62,21 +62,6 @@ function paceMarkClass(detail: LimitPaceDetail): string {
   }
 }
 
-function paceReadoutClass(detail: LimitPaceDetail): string {
-  switch (detail.status) {
-    case "reserve":
-      return "text-success";
-    case "deficit":
-      return "text-destructive";
-    case "on":
-      return "text-muted-foreground";
-    default: {
-      const _exhaustive: never = detail.status;
-      throw new Error(`Unhandled pace status: ${_exhaustive}`);
-    }
-  }
-}
-
 /**
  * Thin tick on the bar at even pace. Green is reserve, red is deficit.
  * It overshoots the track by 10% on each side so it reads as a mark, not a stub.
@@ -116,10 +101,7 @@ export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
-            className={cn(
-              "inline-flex items-center gap-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              paceReadoutClass(detail),
-            )}
+            className="inline-flex items-center gap-0.5 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
         }
       >

@@ -110,11 +110,7 @@ function PoolWindowCard({
         </View>
         {paceReadout ? (
           <Text
-            className={
-              pool.paceDetail?.status === "deficit"
-                ? "max-w-[11rem] text-right text-xs text-red-500"
-                : "max-w-[11rem] text-right text-xs text-emerald-500"
-            }
+            className="max-w-[11rem] text-right text-xs text-foreground-tertiary"
             accessibilityLabel={paceReadout.explanation}
           >
             {paceReadout.percent}
