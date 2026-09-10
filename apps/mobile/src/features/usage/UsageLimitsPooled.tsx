@@ -110,7 +110,11 @@ function PoolWindowCard({
         </View>
         {paceReadout ? (
           <Text
-            className="max-w-[11rem] text-right text-xs text-foreground-tertiary"
+            className={
+              pool.paceDetail?.status === "deficit"
+                ? "max-w-[11rem] text-right text-xs text-red-500"
+                : "max-w-[11rem] text-right text-xs text-emerald-500"
+            }
             accessibilityLabel={paceReadout.explanation}
           >
             {paceReadout.percent}
@@ -134,22 +138,29 @@ function PoolWindowCard({
               accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${rowPace ? `, ${formatAllowancePace(rowPace).marker}` : ""}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
-              className="h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-subtle"
+              className="h-7 min-w-0 flex-1 overflow-visible rounded-md bg-transparent"
             >
-              <AccountSegment
-                remaining={remainingPercent(window)}
-                color={color}
-                pending={Boolean(window.resetsAt)}
-              />
+              <View className="absolute inset-0 overflow-hidden rounded-md bg-subtle">
+                <AccountSegment
+                  remaining={remainingPercent(window)}
+                  color={color}
+                  pending={Boolean(window.resetsAt)}
+                />
+              </View>
               {rowPace ? (
                 <View
                   pointerEvents="none"
                   className={
                     rowPace.status === "deficit"
-                      ? "absolute top-1.5 z-10 h-4 w-0.5 rounded-full bg-red-500"
-                      : "absolute top-1.5 z-10 h-4 w-0.5 rounded-full bg-emerald-500"
+                      ? "absolute z-10 w-0.5 rounded-full bg-red-500"
+                      : "absolute z-10 w-0.5 rounded-full bg-emerald-500"
                   }
-                  style={{ left: `${evenPaceRemainingPercent(rowPace)}%`, marginLeft: -1 }}
+                  style={{
+                    left: `${evenPaceRemainingPercent(rowPace)}%`,
+                    marginLeft: -1,
+                    top: "-5%",
+                    height: "110%",
+                  }}
                 />
               ) : null}
               <View pointerEvents="none" className="absolute inset-0 items-center justify-center">

@@ -62,9 +62,24 @@ function paceMarkClass(detail: LimitPaceDetail): string {
   }
 }
 
+function paceReadoutClass(detail: LimitPaceDetail): string {
+  switch (detail.status) {
+    case "reserve":
+      return "text-success";
+    case "deficit":
+      return "text-destructive";
+    case "on":
+      return "text-muted-foreground";
+    default: {
+      const _exhaustive: never = detail.status;
+      throw new Error(`Unhandled pace status: ${_exhaustive}`);
+    }
+  }
+}
+
 /**
  * Thin tick on the bar at even pace. Green is reserve, red is deficit.
- * Height stays at the track so it reads as a mark, not a shorter stub.
+ * It overshoots the track by 5% on each side so it reads as a mark, not a stub.
  * Near-even gaps never reach here — `paceDetail` is already null.
  */
 export function ExpectedPaceMark({
@@ -79,7 +94,7 @@ export function ExpectedPaceMark({
       data-pace-mark={detail.status}
       aria-hidden
       className={cn(
-        "pointer-events-none absolute top-1/2 z-10 h-3.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-background",
+        "pointer-events-none absolute top-[-5%] z-10 h-[110%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background",
         paceMarkClass(detail),
         className,
       )}
@@ -101,7 +116,10 @@ export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
-            className="inline-flex items-center gap-0.5 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className={cn(
+              "inline-flex items-center gap-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              paceReadoutClass(detail),
+            )}
           />
         }
       >
@@ -153,15 +171,19 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5 overflow-hidden rounded-full bg-muted">
-          {remaining > 0 ? (
-            <div
-              className="absolute inset-y-0 left-0 rounded-full"
-              style={{ width: `${remaining}%`, backgroundColor: color }}
-            />
-          ) : null}
+        <div className="absolute inset-x-0 inset-y-1.5">
+          <div className="relative h-full">
+            <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+              {remaining > 0 ? (
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${remaining}%`, backgroundColor: color }}
+                />
+              ) : null}
+            </div>
+            {detail ? <ExpectedPaceMark detail={detail} /> : null}
+          </div>
         </div>
-        {detail ? <ExpectedPaceMark detail={detail} /> : null}
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         <div className="flex flex-col gap-0.5">

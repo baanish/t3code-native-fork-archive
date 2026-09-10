@@ -118,7 +118,8 @@ describe("LimitWindows pacing", () => {
     expect(markup).toContain("49% left");
     expect(markup).toContain("24% in reserve");
     expect(markup).toContain("data-pace-mark");
-    expect(markup).toContain("h-3.5 w-0.5");
+    expect(markup).toContain("h-[110%] w-0.5");
+    expect(markup).toContain("top-[-5%]");
     expect(markup).not.toContain("until reset");
   });
 
