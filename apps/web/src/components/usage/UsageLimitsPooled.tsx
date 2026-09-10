@@ -2,13 +2,17 @@ import {
   collectLimitAccounts,
   collectLimitNotices,
   collectLimitPools,
+  formatAllowancePace,
   formatDuration,
   formatResetsIn,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
   type LimitPoolWindow,
+  paceDetail,
   remainingPercent,
+  sessionWindowsUntilReset,
+  shortestSessionWindow,
 } from "@t3tools/shared/usageLimits";
 import { TicketIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -22,7 +26,7 @@ import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
-  PaceIcon,
+  PaceReadout,
   ResetCreditDialog,
   barColor,
   resetCreditsSummary,
@@ -148,6 +152,16 @@ function SegmentPopover({
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
+  const detail = paceDetail(window, now);
+  const paceLine = detail
+    ? formatAllowancePace(detail, {
+        sessionWindowsUntilReset: sessionWindowsUntilReset(
+          window,
+          shortestSessionWindow(account.limits.windows),
+          now,
+        ),
+      }).line
+    : null;
   const where =
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
@@ -181,6 +195,7 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
         <Row label="Left">{remaining}%</Row>
+        {paceLine ? <Row label="Pace">{paceLine}</Row> : null}
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -236,6 +251,16 @@ function PoolSegment({
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const detail = paceDetail(window, now);
+  const paceLine = detail
+    ? formatAllowancePace(detail, {
+        sessionWindowsUntilReset: sessionWindowsUntilReset(
+          window,
+          shortestSessionWindow(account.limits.windows),
+          now,
+        ),
+      }).line
+    : null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -244,7 +269,9 @@ function PoolSegment({
           <button
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
+              paceLine ? `, ${paceLine}` : ""
+            }${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -341,6 +368,7 @@ function LegendRow({
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const detail = paceDetail(window, now);
   return (
     <PopoverTrigger
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
@@ -357,6 +385,11 @@ function LegendRow({
       </span>
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
       <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+      {detail ? (
+        <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground tabular-nums sm:inline">
+          {formatAllowancePace(detail).marker}
+        </span>
+      ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
         {resetsIn?.replace("resets in ", "↻ ") ?? ""}
         {credits ? (
@@ -493,8 +526,17 @@ function PoolWindowCard({
             {pool.remainingPercent}%
           </span>
           <span className="text-sm text-muted-foreground">left</span>
-          {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
         </span>
+        {pool.paceDetail ? (
+          <PaceReadout
+            detail={pool.paceDetail}
+            sessionWindowsUntilReset={sessionWindowsUntilReset(
+              pool.members[0]!.window,
+              shortestSessionWindow(pool.members[0]!.account.limits.windows),
+              now,
+            )}
+          />
+        ) : null}
         {nextRefill ? (
           <span className="text-xs text-muted-foreground tabular-nums">
             <span className="font-medium text-foreground">↻ +{nextRefill.restoresPercent}%</span>{" "}

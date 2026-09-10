@@ -20,11 +20,16 @@ import {
   collectLimitSources,
   collectLimitsGroups,
   elapsedShare,
+  forecastFromObservations,
+  formatAllowancePace,
   formatResetsIn,
   limitsNotice,
+  paceDetail,
   paceOf,
   providersWithLimits,
   remainingPercent,
+  sessionWindowsUntilReset,
+  shortestSessionWindow,
 } from "./usageLimits.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
@@ -59,7 +64,8 @@ describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
     expect(paceOf(window, now)).toBe("under");
-    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
+    expect(paceOf({ ...window, usedPercent: 60 }, now)).toBe("on");
+    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("ahead");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
   });
 
@@ -77,6 +83,154 @@ describe("pace", () => {
     expect(formatResetsIn({ ...window, resetsAt: "2026-09-03T11:00:00.000Z" }, now)).toBe(
       "resets now",
     );
+  });
+
+  it("reports reserve, on-pace, and deficit against even spend", () => {
+    expect(paceDetail(window, now)).toMatchObject({
+      status: "reserve",
+      gapPercent: -20,
+      evenSpendLastsUntilReset: true,
+    });
+    expect(paceDetail({ ...window, usedPercent: 60 }, now)).toMatchObject({
+      status: "on",
+      gapPercent: 0,
+      evenSpendLastsUntilReset: true,
+    });
+    expect(paceDetail({ ...window, usedPercent: 80 }, now)).toMatchObject({
+      status: "deficit",
+      gapPercent: 20,
+      evenSpendLastsUntilReset: false,
+    });
+    expect(formatAllowancePace(paceDetail(window, now)!).line).toBe(
+      "20% in reserve · Even spend lasts until reset",
+    );
+    expect(formatAllowancePace(paceDetail({ ...window, usedPercent: 80 }, now)!).line).toBe(
+      "20% in deficit · Even spend would run out before reset",
+    );
+  });
+
+  it("matches the CodexBar-style session reserve example without copying its copy", () => {
+    // 49% left, 1h 15m of a 5h window: elapsed 75%, used 51%, 24% reserve.
+    const session = {
+      ...window,
+      usedPercent: 51,
+      resetsAt: "2026-09-03T13:15:00.000Z",
+    };
+    expect(elapsedShare(session, now)).toBeCloseTo(0.75);
+    expect(paceDetail(session, now)).toMatchObject({
+      status: "reserve",
+      gapPercent: -24,
+      evenSpendLastsUntilReset: true,
+    });
+  });
+
+  it("hides pace for missing, early, exhausted-clock, and expired windows", () => {
+    expect(paceDetail({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(paceDetail({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+    expect(paceDetail({ ...window, windowDurationMins: 0 }, now)).toBeNull();
+    expect(paceDetail({ ...window, resetsAt: "2026-09-03T16:55:00.000Z" }, now)).toBeNull();
+    expect(paceDetail(window, Date.parse("2026-09-03T14:00:00.000Z"))).toBeNull();
+    expect(paceDetail({ ...window, resetsAt: "invalid" }, now)).toBeNull();
+  });
+
+  it("treats zero usage and a fully used window as reserve and deficit", () => {
+    expect(paceDetail({ ...window, usedPercent: 0 }, now)).toMatchObject({
+      status: "reserve",
+      gapPercent: -60,
+    });
+    expect(paceDetail({ ...window, usedPercent: 100 }, now)).toMatchObject({
+      status: "deficit",
+      gapPercent: 40,
+      evenSpendLastsUntilReset: false,
+    });
+  });
+
+  it("does not invent a rate from one snapshot", () => {
+    expect(forecastFromObservations(window, [{ at: now, usedPercent: 40 }], now)).toBeNull();
+    expect(forecastFromObservations(window, [], now)).toBeNull();
+  });
+
+  it("forecasts run-out from a rising in-window sequence", () => {
+    const started = Date.parse("2026-09-03T09:00:00.000Z");
+    const forecast = forecastFromObservations(
+      { ...window, usedPercent: 80 },
+      [
+        { at: started, usedPercent: 20 },
+        { at: now, usedPercent: 80 },
+      ],
+      now,
+    );
+    expect(forecast?.lastsUntilReset).toBe(false);
+    expect(forecast?.runOutInMs).toBeGreaterThan(0);
+    expect(forecast?.runOutInMs).toBeLessThan(2 * 60 * 60 * 1000);
+  });
+
+  it("forecasts lasting when the observed rate is flat or falling", () => {
+    const started = Date.parse("2026-09-03T10:00:00.000Z");
+    expect(
+      forecastFromObservations(
+        { ...window, usedPercent: 20 },
+        [
+          { at: started, usedPercent: 20 },
+          { at: now, usedPercent: 20 },
+        ],
+        now,
+      ),
+    ).toMatchObject({ lastsUntilReset: true, runOutInMs: null });
+  });
+
+  it("drops pre-reset observations after used percent falls", () => {
+    expect(
+      forecastFromObservations(
+        { ...window, usedPercent: 10 },
+        [
+          { at: Date.parse("2026-09-03T09:00:00.000Z"), usedPercent: 90 },
+          { at: Date.parse("2026-09-03T11:00:00.000Z"), usedPercent: 5 },
+          { at: now, usedPercent: 10 },
+        ],
+        now,
+      ),
+    ).toMatchObject({ lastsUntilReset: true });
+  });
+
+  it("rejects observations from before this window or with a zero interval", () => {
+    expect(
+      forecastFromObservations(
+        window,
+        [
+          { at: Date.parse("2026-09-03T08:00:00.000Z"), usedPercent: 10 },
+          { at: Date.parse("2026-09-03T08:30:00.000Z"), usedPercent: 20 },
+        ],
+        now,
+      ),
+    ).toBeNull();
+    expect(
+      forecastFromObservations(
+        window,
+        [
+          { at: now, usedPercent: 10 },
+          { at: now, usedPercent: 20 },
+        ],
+        now,
+      ),
+    ).toBeNull();
+  });
+
+  it("counts remaining session-length windows as a time ratio", () => {
+    const weekly = {
+      id: "seven_day",
+      kind: "weekly" as const,
+      label: "Weekly",
+      usedPercent: 36,
+      windowDurationMins: 7 * 24 * 60,
+      resetsAt: "2026-09-04T02:55:00.000Z",
+    };
+    expect(sessionWindowsUntilReset(weekly, window, now)).toBe(2);
+    expect(sessionWindowsUntilReset(window, window, now)).toBeNull();
+    expect(
+      sessionWindowsUntilReset(weekly, { ...window, windowDurationMins: undefined }, now),
+    ).toBeNull();
+    expect(shortestSessionWindow([weekly, window])?.id).toBe("five_hour");
   });
 });
 
@@ -711,7 +865,7 @@ describe("pools", () => {
       ["codex", 1],
     ]);
     const [session, week] = pools[0]!.windows;
-    // A member with no reset has no clock, so it does not vote on pace.
+    // Two accounts in one pool: quota still averages, pace does not.
     const untimed = collectLimitPools(
       collectLimitAccounts(input).map((account) =>
         account.key === "hub:b"
@@ -726,14 +880,14 @@ describe("pools", () => {
       ),
       now,
     );
-    // Only a votes: 80% used, 80% elapsed.
-    expect(untimed[0]?.windows[0]?.pace).toBe("on");
-    // a is 80% through its window and b 60%: the pool is 70% elapsed, 60% used.
+    expect(untimed[0]?.windows[0]?.pace).toBeNull();
+    expect(untimed[0]?.windows[0]?.paceDetail).toBeNull();
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: "under",
+      pace: null,
+      paceDetail: null,
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),
@@ -741,7 +895,13 @@ describe("pools", () => {
       ["hub:a", 40],
       ["hub:b", 20],
     ]);
-    expect(week).toMatchObject({ id: "seven_day", remainingPercent: 80, members: [{}] });
+    expect(week).toMatchObject({
+      id: "seven_day",
+      remainingPercent: 80,
+      members: [{}],
+      pace: "under",
+      paceDetail: { status: "reserve" },
+    });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
     const mixed = collectLimitPools(
       [

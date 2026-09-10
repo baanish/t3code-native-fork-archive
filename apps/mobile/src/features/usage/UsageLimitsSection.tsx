@@ -10,11 +10,14 @@ import type {
 } from "@t3tools/contracts";
 import {
   elapsedShare,
+  formatAllowancePace,
   formatDuration,
   formatResetsIn,
   limitsNotice,
-  paceOf,
+  paceDetail,
   remainingPercent,
+  sessionWindowsUntilReset,
+  shortestSessionWindow,
 } from "@t3tools/shared/usageLimits";
 import { type ReactNode, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
@@ -25,8 +28,6 @@ import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useProviderColors } from "./usageProviders";
-
-const PACE_LABEL = { ahead: "ahead of pace", on: "on pace", under: "under pace" } as const;
 
 type Driver = ServerProvider["driver"];
 
@@ -48,12 +49,18 @@ function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
   readonly color: string | null;
   readonly now: number;
+  readonly sessionWindowsUntilReset?: number | null;
 }) {
   const { window, now } = props;
   const remaining = remainingPercent(window);
   const elapsed = elapsedShare(window, now);
   const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
-  const pace = paceOf(window, now);
+  const detail = paceDetail(window, now);
+  const paceLine = detail
+    ? formatAllowancePace(detail, {
+        sessionWindowsUntilReset: props.sessionWindowsUntilReset,
+      }).line
+    : null;
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
@@ -87,9 +94,20 @@ function WindowRow(props: {
           />
         ) : null}
       </View>
-      {pace || resetsIn ? (
+      {paceLine || resetsIn ? (
         <View className="flex-row justify-between gap-3">
-          <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
+          <Text
+            className="min-w-0 flex-1 text-xs text-foreground-tertiary"
+            accessibilityLabel={
+              detail
+                ? formatAllowancePace(detail, {
+                    sessionWindowsUntilReset: props.sessionWindowsUntilReset,
+                  }).explanation
+                : undefined
+            }
+          >
+            {paceLine ?? ""}
+          </Text>
           <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
         </View>
       ) : null}
@@ -166,7 +184,17 @@ export function AccountLimits(props: {
       ) : (
         <View className="gap-3">
           {limits.windows.map((window) => (
-            <WindowRow key={window.id} window={window} color={color} now={now} />
+            <WindowRow
+              key={window.id}
+              window={window}
+              color={color}
+              now={now}
+              sessionWindowsUntilReset={sessionWindowsUntilReset(
+                window,
+                shortestSessionWindow(limits.windows),
+                now,
+              )}
+            />
           ))}
         </View>
       )}

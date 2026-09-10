@@ -5,9 +5,13 @@ import {
   collectLimitAccounts,
   collectLimitNotices,
   collectLimitPools,
+  formatAllowancePace,
   formatDuration,
   formatResetsIn,
+  paceDetail,
   remainingPercent,
+  sessionWindowsUntilReset,
+  shortestSessionWindow,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
@@ -26,7 +30,6 @@ import { ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
-const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
 
 function accountName(account: LimitAccount) {
   if (account.displayName) return account.displayName;
@@ -79,6 +82,15 @@ function PoolWindowCard({
 }) {
   const navigation = useNavigation();
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const paceReadout = pool.paceDetail
+    ? formatAllowancePace(pool.paceDetail, {
+        sessionWindowsUntilReset: sessionWindowsUntilReset(
+          pool.members[0]!.window,
+          shortestSessionWindow(pool.members[0]!.account.limits.windows),
+          now,
+        ),
+      })
+    : null;
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
@@ -105,8 +117,13 @@ function PoolWindowCard({
             <Text className="text-sm text-foreground-muted">left</Text>
           </View>
         </View>
-        {pool.pace ? (
-          <Text className="text-xs text-foreground-tertiary">{PACE_LABEL[pool.pace]}</Text>
+        {paceReadout ? (
+          <Text
+            className="max-w-[11rem] text-right text-xs text-foreground-tertiary"
+            accessibilityLabel={paceReadout.explanation}
+          >
+            {paceReadout.marker}
+          </Text>
         ) : null}
       </View>
       {nextRefill ? (
@@ -146,11 +163,13 @@ function PoolWindowCard({
           if (!window) return null;
           const credits = account.limits.resetCredits?.availableCount ?? 0;
           const resetsIn = formatResetsIn(window, now);
+          const rowPace = paceDetail(window, now);
+          const rowMarker = rowPace ? formatAllowancePace(rowPace).marker : null;
           return (
             <Pressable
               key={account.key}
               accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
+              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${rowMarker ? `, ${rowMarker}` : ""}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
               className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
@@ -169,6 +188,9 @@ function PoolWindowCard({
               <Text className="text-sm font-t3-medium tabular-nums text-foreground">
                 {remainingPercent(window)}%
               </Text>
+              {rowMarker && !paceReadout ? (
+                <Text className="text-xs text-foreground-tertiary">{rowMarker}</Text>
+              ) : null}
               <View className="flex-row items-center gap-1">
                 {resetsIn ? (
                   <Text className="text-xs tabular-nums text-foreground-muted">
@@ -279,6 +301,17 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
+  const accountPaceDetail = window ? paceDetail(window, now) : null;
+  const accountPace =
+    account && window && accountPaceDetail
+      ? formatAllowancePace(accountPaceDetail, {
+          sessionWindowsUntilReset: sessionWindowsUntilReset(
+            window,
+            shortestSessionWindow(account.limits.windows),
+            now,
+          ),
+        })
+      : null;
   const [revealed, setRevealed] = useState(false);
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
@@ -329,6 +362,14 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
+              {accountPace ? (
+                <Text
+                  className="text-sm text-foreground-muted"
+                  accessibilityLabel={accountPace.explanation}
+                >
+                  {accountPace.line}
+                </Text>
+              ) : null}
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   Resets{" "}

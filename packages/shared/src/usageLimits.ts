@@ -1,6 +1,6 @@
 /**
  * Selection and pace maths for the provider limits view, shared by web and
- * mobile so both agree on which providers show, what "ahead of pace" means,
+ * mobile so both agree on which providers show, what reserve or deficit means,
  * and how a reset is phrased.
  *
  * @module usageLimits
@@ -347,6 +347,25 @@ export interface LimitPoolMember {
   readonly window: ServerProviderUsageWindow;
 }
 
+export type LimitPace = "ahead" | "on" | "under";
+export type LimitPaceStatus = "reserve" | "on" | "deficit";
+
+/**
+ * Even-spend comparison for one window. Positive `gapPercent` is a deficit
+ * (more quota used than the clock's share). This is not a forecast of how
+ * the remaining quota will be spent.
+ */
+export interface LimitPaceDetail {
+  readonly pace: LimitPace;
+  readonly status: LimitPaceStatus;
+  /** `usedPercent - expectedUsedPercent`, rounded. Positive is deficit. */
+  readonly gapPercent: number;
+  readonly expectedUsedPercent: number;
+  readonly usedPercent: number;
+  readonly elapsedShare: number;
+  readonly evenSpendLastsUntilReset: boolean;
+}
+
 /**
  * One window id across every account that reports it: the pooled share left,
  * pace against the clock, and the resets in the order they will land, each
@@ -364,7 +383,12 @@ export interface LimitPoolWindow {
   }>;
   readonly remainingPercent: number;
   readonly usedPercent: number;
+  /**
+   * Even-spend pace for a single-account pool. Multi-account averages hide
+   * opposing reserve and deficit, so those cards omit it.
+   */
   readonly pace: LimitPace | null;
+  readonly paceDetail: LimitPaceDetail | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -447,16 +471,10 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Pace compares spend against the clock, so it is judged only over the
-    // members that have a clock; a window with no reset would otherwise
-    // count as spend with no time elapsed and skew the verdict.
-    const timed = members.flatMap((m) => {
-      const share = elapsedShare(m.window, now);
-      return share === null ? [] : [{ used: m.window.usedPercent, elapsed: share }];
-    });
-    const timedUsed = timed.reduce((sum, t) => sum + t.used, 0) / timed.length;
-    const meanElapsed =
-      timed.length > 0 ? timed.reduce((sum, t) => sum + t.elapsed, 0) / timed.length : null;
+    // Pace is per account. Averaging two clocks can cancel a reserve against a
+    // deficit and read as "on pace" when neither account is.
+    const only = members.length === 1 ? members[0] : undefined;
+    const detail = only ? paceDetail(only.window, now) : null;
     const resets = members
       .flatMap((member) => {
         const at = resetMillis(member.window);
@@ -481,7 +499,8 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
+      pace: detail?.pace ?? null,
+      paceDetail: detail,
       resets,
     };
   });
@@ -519,23 +538,230 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
   return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
 }
 
-export type LimitPace = "ahead" | "on" | "under";
+/**
+ * Hide even-spend pace until this share of the window has elapsed. Earlier
+ * figures swing on a few minutes of usage and read as false precision.
+ */
+const PACE_MIN_ELAPSED = 0.03;
 
 /**
  * Usage against the clock. Spending evenly leaves the same share of quota as
- * there is time left in the window; within five points of that counts as on
- * pace, further ahead means the window may run dry first.
+ * there is time left in the window. The coarse `ahead` / `on` / `under` label
+ * follows the rounded gap so a 2-point deficit is not hidden as "on pace".
  */
 export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
-  const elapsed = elapsedShare(window, now);
-  return elapsed === null ? null : paceOfShares(window.usedPercent, elapsed);
+  return paceDetail(window, now)?.pace ?? null;
 }
 
-function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
-  const gap = usedPercent - elapsed * 100;
-  if (gap > 5) return "ahead";
-  if (gap < -5) return "under";
-  return "on";
+function clampPercent(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, value));
+}
+
+function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceStatus } {
+  if (gapPercent > 0) return { pace: "ahead", status: "deficit" };
+  if (gapPercent < 0) return { pace: "under", status: "reserve" };
+  return { pace: "on", status: "on" };
+}
+
+/**
+ * Even-spend comparison for one provider window. Returns null when the
+ * provider omitted duration or reset, the window has already reset, the
+ * clock has barely started, or the inputs are not finite.
+ */
+export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
+  const elapsed = elapsedShare(window, now);
+  if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) return null;
+  const resetsAt = resetMillis(window);
+  if (resetsAt !== null && resetsAt <= now) return null;
+  const usedPercent = clampPercent(window.usedPercent);
+  if (usedPercent === null) return null;
+  const expectedUsedPercent = elapsed * 100;
+  const gap = usedPercent - expectedUsedPercent;
+  if (!Number.isFinite(gap)) return null;
+  const gapPercent = Math.round(gap);
+  const { pace, status } = paceFromGap(gapPercent);
+  return {
+    pace,
+    status,
+    gapPercent,
+    expectedUsedPercent,
+    usedPercent,
+    elapsedShare: elapsed,
+    evenSpendLastsUntilReset: gapPercent <= 0,
+  };
+}
+
+export interface UsageWindowObservation {
+  readonly at: number;
+  readonly usedPercent: number;
+}
+
+/**
+ * Straight-line forecast from two or more observations in the current window.
+ * A single snapshot cannot supply a rate, so this stays null until a sequence
+ * is provided. Production UI does not persist observations.
+ */
+export interface LimitPaceForecast {
+  readonly observedRatePercentPerMs: number;
+  readonly projectedUsedAtReset: number | null;
+  readonly lastsUntilReset: boolean;
+  readonly runOutInMs: number | null;
+}
+
+/**
+ * Observed-rate forecast. Uses the first and last in-window observations after
+ * dropping points from before the current window or after a usage drop that
+ * looks like a reset. Insufficient or non-finite sequences return null.
+ */
+export function forecastFromObservations(
+  window: ServerProviderUsageWindow,
+  observations: readonly UsageWindowObservation[],
+  now: number,
+): LimitPaceForecast | null {
+  const resetsAt = resetMillis(window);
+  if (resetsAt === null || window.windowDurationMins === undefined) return null;
+  const length = window.windowDurationMins * MINUTE;
+  if (length <= 0 || !Number.isFinite(now)) return null;
+  const windowStart = resetsAt - length;
+  const inWindow = observations
+    .filter((observation) => {
+      const used = clampPercent(observation.usedPercent);
+      return (
+        used !== null &&
+        Number.isFinite(observation.at) &&
+        observation.at >= windowStart &&
+        observation.at <= Math.max(now, resetsAt)
+      );
+    })
+    .map((observation) => ({
+      at: observation.at,
+      usedPercent: clampPercent(observation.usedPercent)!,
+    }))
+    .sort((left, right) => left.at - right.at || left.usedPercent - right.usedPercent);
+  // A drop in used% is treated as a reset: keep only the points after it.
+  const series: typeof inWindow = [];
+  for (const observation of inWindow) {
+    const previous = series[series.length - 1];
+    if (previous && observation.usedPercent + 0.5 < previous.usedPercent) {
+      series.length = 0;
+    }
+    series.push(observation);
+  }
+  if (series.length < 2) return null;
+  const first = series[0]!;
+  const last = series[series.length - 1]!;
+  const dt = last.at - first.at;
+  if (dt <= 0) return null;
+  const observedRatePercentPerMs = (last.usedPercent - first.usedPercent) / dt;
+  if (!Number.isFinite(observedRatePercentPerMs)) return null;
+  const remainingMs = resetsAt - now;
+  if (remainingMs <= 0) return null;
+  const usedNow = clampPercent(window.usedPercent);
+  if (usedNow === null) return null;
+  const remainingQuota = 100 - usedNow;
+  if (observedRatePercentPerMs <= 0) {
+    return {
+      observedRatePercentPerMs,
+      projectedUsedAtReset: usedNow,
+      lastsUntilReset: remainingQuota > 0,
+      runOutInMs: null,
+    };
+  }
+  const projectedUsedAtReset = usedNow + observedRatePercentPerMs * remainingMs;
+  if (!Number.isFinite(projectedUsedAtReset)) return null;
+  const runOutInMs = remainingQuota <= 0 ? 0 : remainingQuota / observedRatePercentPerMs;
+  if (!Number.isFinite(runOutInMs)) return null;
+  return {
+    observedRatePercentPerMs,
+    projectedUsedAtReset,
+    lastsUntilReset: projectedUsedAtReset <= 100,
+    runOutInMs: projectedUsedAtReset <= 100 ? null : runOutInMs,
+  };
+}
+
+/** Shortest reported session-kind window with a usable duration. */
+export function shortestSessionWindow(
+  windows: readonly ServerProviderUsageWindow[],
+): ServerProviderUsageWindow | undefined {
+  return windows
+    .filter(
+      (candidate) =>
+        candidate.kind === "session" &&
+        candidate.windowDurationMins !== undefined &&
+        candidate.windowDurationMins > 0,
+    )
+    .sort((left, right) => (left.windowDurationMins ?? 0) - (right.windowDurationMins ?? 0))[0];
+}
+
+/**
+ * How many full session-length periods remain until `window` resets. This is a
+ * time ratio, not a conversion of weekly quota into session quota.
+ */
+export function sessionWindowsUntilReset(
+  window: ServerProviderUsageWindow,
+  session: ServerProviderUsageWindow | undefined,
+  now: number,
+): number | null {
+  if (!session || window.kind === "session") return null;
+  if (session.kind !== "session" || session.windowDurationMins === undefined) return null;
+  if (session.windowDurationMins <= 0) return null;
+  const resetsAt = resetMillis(window);
+  if (resetsAt === null || resetsAt <= now) return null;
+  const count = Math.floor((resetsAt - now) / (session.windowDurationMins * MINUTE));
+  return count >= 1 && Number.isFinite(count) ? count : null;
+}
+
+export interface LimitPaceReadout {
+  readonly marker: string;
+  readonly verdict: string;
+  readonly line: string;
+  readonly explanation: string;
+}
+
+/**
+ * Native copy for the even-spend readout. The verdict is the allowance check,
+ * not an observed-rate forecast.
+ */
+export function formatAllowancePace(
+  detail: LimitPaceDetail,
+  extras: { readonly sessionWindowsUntilReset?: number | null | undefined } = {},
+): LimitPaceReadout {
+  const absGap = Math.abs(detail.gapPercent);
+  let marker: string;
+  switch (detail.status) {
+    case "reserve":
+      marker = `${absGap}% in reserve`;
+      break;
+    case "deficit":
+      marker = `${absGap}% in deficit`;
+      break;
+    case "on":
+      marker = "On pace";
+      break;
+    default: {
+      const _exhaustive: never = detail.status;
+      throw new Error(`Unhandled pace status: ${_exhaustive}`);
+    }
+  }
+  const verdict = detail.evenSpendLastsUntilReset
+    ? "Even spend lasts until reset"
+    : "Even spend would run out before reset";
+  const windows = extras.sessionWindowsUntilReset;
+  const extra =
+    windows !== undefined && windows !== null
+      ? ` · ${windows} session-length ${windows === 1 ? "window" : "windows"} until reset`
+      : "";
+  const line = `${marker} · ${verdict}${extra}`;
+  const expected = Math.round(detail.expectedUsedPercent);
+  const explanation =
+    `${marker}. Compared with even spending across this window, expected use by now is ${expected}%. ` +
+    `${verdict}. This is an allowance check, not a forecast of future use.${
+      extra
+        ? ` Time remaining covers ${windows} full session-length ${windows === 1 ? "window" : "windows"}.`
+        : ""
+    }`;
+  return { marker, verdict, line, explanation };
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

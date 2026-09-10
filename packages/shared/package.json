@@ -243,6 +243,10 @@
       "types": "./src/testing/symlinks.ts",
       "import": "./src/testing/symlinks.ts"
     },
+    "./testing/usageLimitsFixtures": {
+      "types": "./src/testing/usageLimitsFixtures.ts",
+      "import": "./src/testing/usageLimitsFixtures.ts"
+    },
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"
