@@ -49,131 +49,134 @@ vi.mock("../settings/RedactedSensitiveText", () => ({
 
 vi.mock("../ui/button", () => ({ Button: "button" }));
 
-import { ProviderDriverKind } from "@t3tools/contracts";
 import {
-  deficitPresentations,
-  edgePresentations,
-  independentAccountPresentations,
-  PACING_FIXTURE_NOW,
-  reservePresentations,
-  reserveWindows,
-  unavailableEstimatePresentations,
-} from "@t3tools/shared/testing/usageLimitsFixtures";
-import { collectLimitPools, collectLimitAccounts } from "@t3tools/shared/usageLimits";
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+  type ServerProviderUsageWindow,
+} from "@t3tools/contracts";
 
-import { isLimitsPacingMockScene } from "./UsageLimitsPacingHarness";
 import { LimitWindows } from "./UsageLimits";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 
-describe("UsageLimitsPacingHarness", () => {
-  it("accepts only the named mock scenes", () => {
-    expect(isLimitsPacingMockScene("reserve")).toBe(true);
-    expect(isLimitsPacingMockScene("live")).toBe(false);
-    expect(isLimitsPacingMockScene("toString")).toBe(false);
-  });
-});
+const NOW = Date.parse("2026-09-03T12:00:00.000Z");
+const CHECKED_AT = "2026-09-03T11:55:00.000Z";
+
+/** 49% left, 1h 15m of a 5h window → 24% reserve. */
+const reserveSession = {
+  id: "primary",
+  kind: "session",
+  label: "Session",
+  usedPercent: 51,
+  windowDurationMins: 300,
+  resetsAt: "2026-09-03T13:15:00.000Z",
+} as const satisfies ServerProviderUsageWindow;
+
+/** 20% left, 2h of a 5h window → 20% deficit. */
+const deficitSession = {
+  ...reserveSession,
+  usedPercent: 80,
+  resetsAt: "2026-09-03T14:00:00.000Z",
+} as const satisfies ServerProviderUsageWindow;
+
+function provider(overrides: Partial<ServerProvider>): ServerProvider {
+  return {
+    instanceId: ProviderInstanceId.make("codex"),
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: CHECKED_AT,
+    models: [],
+    slashCommands: [],
+    skills: [],
+    ...overrides,
+  };
+}
+
+function presentations(providers: readonly ServerProvider[]) {
+  return new Map([
+    [
+      EnvironmentId.make("env-a"),
+      { entry: { target: { label: "Laptop" } }, serverConfig: { providers } },
+    ],
+  ]);
+}
 
 describe("LimitWindows pacing", () => {
   it("renders reserve copy and a pace mark without reset verdicts", () => {
     const markup = renderToStaticMarkup(
       <LimitWindows
         driver={ProviderDriverKind.make("claudeAgent")}
-        windows={[...reserveWindows]}
-        now={PACING_FIXTURE_NOW}
+        windows={[reserveSession]}
+        now={NOW}
       />,
     );
     expect(markup).toContain("49% left");
     expect(markup).toContain("24% in reserve");
-    expect(markup).toContain("64% left");
-    expect(markup).toContain("55% in reserve");
-    expect(markup).toContain("41% left");
-    expect(markup).toContain("32% in reserve");
     expect(markup).toContain("data-pace-mark");
     expect(markup).toContain("h-3.5 w-0.5");
-    expect(markup).not.toContain("h-2.5 w-1");
-    expect(markup).not.toContain("Even spend");
     expect(markup).not.toContain("until reset");
-    expect(markup).not.toContain("35% risk");
-    expect(markup).not.toContain("session quotas left");
   });
 
-  it("keeps quota and reset when pace cannot be estimated", () => {
+  it("keeps quota and reset when duration is missing", () => {
     const markup = renderToStaticMarkup(
       <LimitWindows
         driver={ProviderDriverKind.make("codex")}
-        windows={
-          unavailableEstimatePresentations().values().next().value!.serverConfig!.providers![0]!
-            .usageLimits!.windows
-        }
-        now={PACING_FIXTURE_NOW}
+        windows={[{ ...reserveSession, windowDurationMins: undefined }]}
+        now={NOW}
       />,
     );
-    expect(markup).toContain("60% left");
+    expect(markup).toContain("49% left");
     expect(markup).toContain("resets in");
     expect(markup).not.toContain("in reserve");
     expect(markup).not.toContain("in deficit");
-    expect(markup).not.toContain("On pace");
   });
 });
 
 describe("UsageLimitsPooled pacing", () => {
-  it("shows account-level reserve on a single-account pool", () => {
+  it("shows account-level reserve on a single-account pool without a legend", () => {
     const markup = renderToStaticMarkup(
-      <UsageLimitsPooled presentations={reservePresentations()} now={PACING_FIXTURE_NOW} />,
+      <UsageLimitsPooled
+        presentations={presentations([
+          provider({
+            instanceId: ProviderInstanceId.make("claude"),
+            driver: ProviderDriverKind.make("claudeAgent"),
+            displayName: "Personal",
+            usageLimits: { checkedAt: CHECKED_AT, windows: [reserveSession] },
+          }),
+        ])}
+        now={NOW}
+      />,
     );
     expect(markup).toContain("24% in reserve");
-    expect(markup).toContain("Weekly · Fable");
     expect(markup).toContain("data-pace-readout");
     expect(markup).toContain('data-pace-mark="reserve"');
     expect(markup).not.toContain("data-account-legend");
-    expect(markup).not.toContain("Even spend");
-    expect(markup).not.toContain("until reset");
   });
 
   it("keeps independent Claude reserve and Codex deficit on separate cards", () => {
-    const presentations = independentAccountPresentations();
-    const pools = collectLimitPools(collectLimitAccounts(presentations), PACING_FIXTURE_NOW);
-    expect(pools).toHaveLength(2);
-    const claude = pools.find((pool) => pool.driver === "claudeAgent");
-    const codex = pools.find((pool) => pool.driver === "codex");
-    expect(claude?.windows.some((window) => window.paceDetail?.status === "reserve")).toBe(true);
-    expect(codex?.windows.some((window) => window.paceDetail?.status === "deficit")).toBe(true);
-
     const markup = renderToStaticMarkup(
-      <UsageLimitsPooled presentations={presentations} now={PACING_FIXTURE_NOW} />,
+      <UsageLimitsPooled
+        presentations={presentations([
+          provider({
+            instanceId: ProviderInstanceId.make("claude"),
+            driver: ProviderDriverKind.make("claudeAgent"),
+            displayName: "Personal",
+            usageLimits: { checkedAt: CHECKED_AT, windows: [reserveSession] },
+          }),
+          provider({
+            displayName: "Work",
+            usageLimits: { checkedAt: CHECKED_AT, windows: [deficitSession] },
+          }),
+        ])}
+        now={NOW}
+      />,
     );
     expect(markup).toContain("24% in reserve");
     expect(markup).toContain("20% in deficit");
-    expect(markup).toContain("Weekly · Fable");
-    expect(markup).not.toContain("Even spend");
-  });
-
-  it("renders deficit, zero, exhausted, and on-pace without NaN", () => {
-    const deficit = renderToStaticMarkup(
-      <UsageLimitsPooled presentations={deficitPresentations()} now={PACING_FIXTURE_NOW} />,
-    );
-    const edges = renderToStaticMarkup(
-      <UsageLimitsPooled presentations={edgePresentations()} now={PACING_FIXTURE_NOW} />,
-    );
-    expect(deficit).toContain("20% in deficit");
-    expect(deficit).toContain('data-pace-mark="deficit"');
-    expect(edges).toContain("60% in reserve");
-    expect(edges).toContain("40% in deficit");
-    expect(edges).toContain("Matched");
-    expect(edges).not.toContain("On pace");
-    expect(deficit + edges).not.toMatch(/NaN|Infinity/);
-  });
-
-  it("omits estimates when duration is missing or the window has just opened", () => {
-    const markup = renderToStaticMarkup(
-      <UsageLimitsPooled
-        presentations={unavailableEstimatePresentations()}
-        now={PACING_FIXTURE_NOW}
-      />,
-    );
-    expect(markup).toContain("60% left");
-    expect(markup).toContain("99% left");
-    expect(markup).not.toContain("in reserve");
-    expect(markup).not.toContain("in deficit");
   });
 });

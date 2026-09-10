@@ -48,7 +48,7 @@ account does not report that window. When the provider reports reset times, the 
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. When a window includes both a reset time and a
 duration, Limits marks **in reserve** or **in deficit** against even spending, and places a
-green or red pill on the bar at even pace. That comparison is an allowance check, not a forecast.
+green or red tick on the bar at even pace. That comparison is an allowance check, not a forecast.
 Pace is omitted when use is within two points of even pace, the window has barely started, the
 window has already reset, or the provider did not report a duration. It is also omitted from a
 pooled total that mixes more than one account, so opposing reserve and deficit cannot cancel out.

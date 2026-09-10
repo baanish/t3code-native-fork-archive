@@ -371,7 +371,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                   className="text-sm text-foreground-muted"
                   accessibilityLabel={accountPace.explanation}
                 >
-                  {accountPace.line}
+                  {accountPace.marker}
                 </Text>
               ) : null}
               {window.resetsAt ? (

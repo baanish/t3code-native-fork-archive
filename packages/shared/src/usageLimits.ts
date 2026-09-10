@@ -361,9 +361,7 @@ export interface LimitPaceDetail {
   /** `usedPercent - expectedUsedPercent`, rounded. Positive is deficit. */
   readonly gapPercent: number;
   readonly expectedUsedPercent: number;
-  readonly usedPercent: number;
   readonly elapsedShare: number;
-  readonly evenSpendLastsUntilReset: boolean;
 }
 
 /**
@@ -610,9 +608,7 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
     status,
     gapPercent,
     expectedUsedPercent,
-    usedPercent,
     elapsedShare: elapsed,
-    evenSpendLastsUntilReset: gap <= 0,
   };
 }
 
@@ -621,139 +617,14 @@ export function evenPaceRemainingPercent(detail: LimitPaceDetail): number {
   return Math.round((1 - detail.elapsedShare) * 100);
 }
 
-export interface UsageWindowObservation {
-  readonly at: number;
-  readonly usedPercent: number;
-}
-
-/**
- * Straight-line forecast from two or more observations in the current window.
- * A single snapshot cannot supply a rate, so this stays null until a sequence
- * is provided. Production UI does not persist observations.
- */
-export interface LimitPaceForecast {
-  readonly observedRatePercentPerMs: number;
-  readonly projectedUsedAtReset: number | null;
-  readonly lastsUntilReset: boolean;
-  readonly runOutInMs: number | null;
-}
-
-/**
- * Observed-rate forecast. Uses the first and last in-window observations after
- * dropping points from before the current window or after a usage drop that
- * looks like a reset. Insufficient or non-finite sequences return null.
- */
-export function forecastFromObservations(
-  window: ServerProviderUsageWindow,
-  observations: readonly UsageWindowObservation[],
-  now: number,
-): LimitPaceForecast | null {
-  const resetsAt = resetMillis(window);
-  if (resetsAt === null || window.windowDurationMins === undefined) return null;
-  const length = window.windowDurationMins * MINUTE;
-  if (length <= 0 || !Number.isFinite(now)) return null;
-  const windowStart = resetsAt - length;
-  const inWindow = observations
-    .filter((observation) => {
-      const used = clampPercent(observation.usedPercent);
-      return (
-        used !== null &&
-        Number.isFinite(observation.at) &&
-        observation.at >= windowStart &&
-        observation.at <= now
-      );
-    })
-    .map((observation) => ({
-      at: observation.at,
-      usedPercent: clampPercent(observation.usedPercent)!,
-    }))
-    .sort((left, right) => left.at - right.at || left.usedPercent - right.usedPercent);
-  // A drop in used% is treated as a reset: keep only the points after it.
-  const series: typeof inWindow = [];
-  for (const observation of inWindow) {
-    const previous = series[series.length - 1];
-    if (previous && observation.usedPercent + 0.5 < previous.usedPercent) {
-      series.length = 0;
-    }
-    series.push(observation);
-  }
-  if (series.length < 2) return null;
-  const first = series[0]!;
-  const last = series[series.length - 1]!;
-  const dt = last.at - first.at;
-  if (dt <= 0) return null;
-  const observedRatePercentPerMs = (last.usedPercent - first.usedPercent) / dt;
-  if (!Number.isFinite(observedRatePercentPerMs)) return null;
-  const remainingMs = resetsAt - now;
-  if (remainingMs <= 0) return null;
-  const usedNow = clampPercent(window.usedPercent);
-  if (usedNow === null) return null;
-  const remainingQuota = 100 - usedNow;
-  if (observedRatePercentPerMs <= 0) {
-    return {
-      observedRatePercentPerMs,
-      projectedUsedAtReset: usedNow,
-      lastsUntilReset: remainingQuota > 0,
-      runOutInMs: null,
-    };
-  }
-  const projectedUsedAtReset = usedNow + observedRatePercentPerMs * remainingMs;
-  if (!Number.isFinite(projectedUsedAtReset)) return null;
-  const runOutInMs = remainingQuota <= 0 ? 0 : remainingQuota / observedRatePercentPerMs;
-  if (!Number.isFinite(runOutInMs)) return null;
-  return {
-    observedRatePercentPerMs,
-    projectedUsedAtReset,
-    lastsUntilReset: projectedUsedAtReset <= 100,
-    runOutInMs: projectedUsedAtReset <= 100 ? null : runOutInMs,
-  };
-}
-
-/** Shortest reported session-kind window with a usable duration. */
-export function shortestSessionWindow(
-  windows: readonly ServerProviderUsageWindow[],
-): ServerProviderUsageWindow | undefined {
-  return windows
-    .filter(
-      (candidate) =>
-        candidate.kind === "session" &&
-        candidate.windowDurationMins !== undefined &&
-        candidate.windowDurationMins > 0,
-    )
-    .sort((left, right) => (left.windowDurationMins ?? 0) - (right.windowDurationMins ?? 0))[0];
-}
-
-/**
- * How many full session-length periods remain until `window` resets. This is a
- * time ratio, not a conversion of weekly quota into session quota.
- */
-export function sessionWindowsUntilReset(
-  window: ServerProviderUsageWindow,
-  session: ServerProviderUsageWindow | undefined,
-  now: number,
-): number | null {
-  if (!session || window.kind === "session") return null;
-  if (session.kind !== "session" || session.windowDurationMins === undefined) return null;
-  if (session.windowDurationMins <= 0) return null;
-  const resetsAt = resetMillis(window);
-  if (resetsAt === null || resetsAt <= now) return null;
-  const count = Math.floor((resetsAt - now) / (session.windowDurationMins * MINUTE));
-  return count >= 1 && Number.isFinite(count) ? count : null;
-}
-
 export interface LimitPaceReadout {
   readonly marker: string;
   /** Gap only, for the compact icon+percent chip. */
   readonly percent: string;
-  readonly verdict: string;
-  readonly line: string;
   readonly explanation: string;
 }
 
-/**
- * Native copy for the even-spend readout. Visible text is only the reserve or
- * deficit marker. Reset forecasts stay out of the line.
- */
+/** Reserve or deficit copy. Reset forecasts stay out of the line. */
 export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
   const absGap = Math.abs(detail.gapPercent);
   let marker: string;
@@ -773,8 +644,11 @@ export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
     }
   }
   const expected = Math.round(detail.expectedUsedPercent);
-  const explanation = `${marker}. Even pace by now is ${expected}% used.`;
-  return { marker, percent: `${absGap}%`, verdict: marker, line: marker, explanation };
+  return {
+    marker,
+    percent: `${absGap}%`,
+    explanation: `${marker}. Even pace by now is ${expected}% used.`,
+  };
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */
