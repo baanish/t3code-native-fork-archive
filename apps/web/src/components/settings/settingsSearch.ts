@@ -191,6 +191,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
   },
   {
+    id: "stats-for-nerds",
+    title: "Stats for nerds",
+    to: "/settings/general",
+    searchTerms: [
+      "tokens usage context window tok/s tokens per second ttft time to first token response",
+    ],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

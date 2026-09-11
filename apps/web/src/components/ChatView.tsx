@@ -8282,6 +8282,8 @@ export default function ChatView(props: ChatViewProps) {
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
+                statsForNerdsEnabled={settings.statsForNerdsEnabled}
+                activities={settings.statsForNerdsEnabled ? threadActivities : undefined}
                 workspaceRoot={activeWorkspaceRoot}
                 skills={
                   activeProviderStatus

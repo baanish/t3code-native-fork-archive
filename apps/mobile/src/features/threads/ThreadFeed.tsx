@@ -1,15 +1,19 @@
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { useViewabilityAmount, type LegendListRef } from "@legendapp/list/react-native";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
 import type {
   ChatAttachment,
   ChatFileAttachment,
   ChatImageAttachment,
   EnvironmentId,
   MessageId,
+  OrchestrationThreadActivity,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { deriveTurnNerdStats, formatNerdStatsParts } from "@t3tools/client-runtime/state/nerdStats";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import {
   codexArtifactTemplatePresentationLabel,
@@ -127,6 +131,8 @@ import {
   resolveNativeMarkdownTypography,
 } from "../../lib/appearancePreferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { useSelectedThreadDetail } from "../../state/use-thread-detail";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
@@ -223,6 +229,7 @@ const THREAD_FEED_DISCLOSURE_ENTER_TRANSITION = FadeIn.delay(
 // Entering animations must only play for rows born just now — LegendList
 // remounts rows when they scroll back into view, and replaying an entrance for
 // old content would be its own kind of jank.
+const EMPTY_THREAD_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
 const FRESH_ENTRY_WINDOW_MS = 3_000;
 function isFreshTimestamp(input: string): boolean {
   const timestamp = Date.parse(input);
@@ -1355,6 +1362,9 @@ function renderFeedEntry(
     readonly userBubbleMaxWidth: number;
     /** Width assistant markdown lays out in, so images can size their frame before layout. */
     readonly markdownContentWidth: number;
+    readonly statsForNerdsEnabled: boolean;
+    readonly activities: ReadonlyArray<OrchestrationThreadActivity>;
+    readonly latestTurn: ThreadFeedLatestTurn | null;
   },
 ) {
   const entry = info.item;
@@ -1472,6 +1482,18 @@ function renderFeedEntry(
       props.terminalAssistantMessageIds.has(message.id) &&
       !assistantTurnStillInProgress &&
       !message.streaming;
+    const nerdStats =
+      showAssistantMeta && props.statsForNerdsEnabled
+        ? deriveTurnNerdStats({
+            turnId: message.turnId,
+            activities: props.activities,
+            latestTurn: props.latestTurn,
+            firstContentAt: message.createdAt,
+            completedAt: message.updatedAt,
+          })
+        : null;
+    const nerdStatsParts = nerdStats ? formatNerdStatsParts(nerdStats) : [];
+    const nerdStatsLabel = nerdStatsParts.length > 0 ? nerdStatsParts.join(" · ") : null;
 
     if (isUser) {
       return (
@@ -1630,17 +1652,24 @@ function renderFeedEntry(
           );
         })}
         {showAssistantMeta ? (
-          <View className="mt-1 flex-row items-center gap-1">
-            <CopyTextButton
-              accessibilityLabel="Copy message"
-              text={renderedText}
-              tintColor={iconSubtleColor}
-              buttonSize={28}
-              iconSize={13}
-            />
-            <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
-              {timestampLabel}
-            </Text>
+          <View className="mt-1 gap-0.5">
+            <View className="flex-row items-center gap-1">
+              <CopyTextButton
+                accessibilityLabel="Copy message"
+                text={renderedText}
+                tintColor={iconSubtleColor}
+                buttonSize={28}
+                iconSize={13}
+              />
+              <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
+                {timestampLabel}
+              </Text>
+            </View>
+            {nerdStatsLabel ? (
+              <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
+                {nerdStatsLabel}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </Animated.View>
@@ -1942,6 +1971,13 @@ function ThreadFeedPlaceholder(props: {
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
   const { themeAppearance } = useAppearancePreferences();
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const statsForNerdsEnabled =
+    AsyncResult.isSuccess(preferences) && preferences.value.statsForNerdsEnabled === true;
+  const selectedThreadDetail = useSelectedThreadDetail();
+  const threadActivities = statsForNerdsEnabled
+    ? (selectedThreadDetail?.activities ?? EMPTY_THREAD_ACTIVITIES)
+    : EMPTY_THREAD_ACTIVITIES;
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
   const disclosureSettleSecondFrameRef = useRef<number | null>(null);
@@ -2282,6 +2318,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       themeAppearance,
       userBubbleColor,
       viewportWidth,
+      statsForNerdsEnabled,
+      threadActivities,
     }),
     [
       props.dispatchingMessageId,
@@ -2295,6 +2333,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       themeAppearance,
       userBubbleColor,
       viewportWidth,
+      statsForNerdsEnabled,
+      threadActivities,
     ],
   );
   const reportHeaderMaterialVisibility = useCallback(
@@ -2727,6 +2767,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             themeAppearance,
             userBubbleMaxWidth,
             markdownContentWidth,
+            statsForNerdsEnabled,
+            activities: threadActivities,
+            latestTurn: props.latestTurn,
             skills: props.skills,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
           })}
@@ -2760,8 +2803,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,
+      props.latestTurn,
       props.onUseArtifactTemplate,
       props.skills,
+      statsForNerdsEnabled,
+      threadActivities,
       renderMarkdownImage,
       renderViewedImage,
     ],

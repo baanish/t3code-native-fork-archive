@@ -576,10 +576,22 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function GeneralSettingsSection() {
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const statsForNerdsEnabled =
+    AsyncResult.isSuccess(preferences) && preferences.value.statsForNerdsEnabled === true;
+
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
       <AutoSettleSettingsRows />
+      <SettingsSwitchRow
+        icon="brain"
+        label="Stats for nerds"
+        subtitle="Context window, usage, tokens per second, and time to first token"
+        value={statsForNerdsEnabled}
+        onValueChange={(value) => savePreferences({ statsForNerdsEnabled: value })}
+      />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
     </SettingsSection>
   );

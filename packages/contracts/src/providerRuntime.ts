@@ -397,6 +397,17 @@ export const TurnTokenUsage = Schema.Union([
 ]);
 export type TurnTokenUsage = typeof TurnTokenUsage.Type;
 
+/** Hidden thread activity that carries main-agent usage and timing for one turn. */
+export const TURN_USAGE_ACTIVITY_KIND = "turn.usage";
+
+export const TurnUsageActivityPayload = Schema.Struct({
+  tokenUsage: Schema.optional(TurnTokenUsage),
+  firstContentAt: Schema.optional(IsoDateTime),
+  startedAt: Schema.optional(IsoDateTime),
+  completedAt: Schema.optional(IsoDateTime),
+});
+export type TurnUsageActivityPayload = typeof TurnUsageActivityPayload.Type;
+
 const TurnCompletedPayload = Schema.Struct({
   state: RuntimeTurnState,
   stopReason: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),

@@ -3,6 +3,7 @@ import {
   type AssistantCitation,
   type EnvironmentId,
   type MessageId,
+  type OrchestrationThreadActivity,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type ToolActivityIcon,
@@ -21,6 +22,7 @@ import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import { deriveTurnNerdStats, formatNerdStatsParts } from "@t3tools/client-runtime/state/nerdStats";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
@@ -222,6 +224,9 @@ interface TimelineRowSharedState {
   workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  latestTurn: TimelineLatestTurn | null;
+  activities: ReadonlyArray<OrchestrationThreadActivity>;
+  statsForNerdsEnabled: boolean;
 }
 
 interface TimelineRowActivityState {
@@ -284,6 +289,7 @@ function TimelineListFooter({ composerInset }: { readonly composerInset: number 
   );
 }
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_TIMELINE_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -310,6 +316,8 @@ interface MessagesTimelineProps {
   ) => boolean;
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  statsForNerdsEnabled?: boolean;
+  activities?: ReadonlyArray<OrchestrationThreadActivity>;
   isWorking: boolean;
   isPreparingWorktree?: boolean;
   isCompacting?: boolean;
@@ -372,6 +380,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  statsForNerdsEnabled = false,
+  activities = EMPTY_TIMELINE_ACTIVITIES,
   listRef,
   timelineEntries,
   latestTurn,
@@ -761,6 +771,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      latestTurn,
+      activities: statsForNerdsEnabled ? activities : EMPTY_TIMELINE_ACTIVITIES,
+      statsForNerdsEnabled,
     }),
     [
       readyCitationRequest,
@@ -785,6 +798,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      latestTurn,
+      activities,
+      statsForNerdsEnabled,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1727,32 +1743,51 @@ function AssistantMessageMeta({
   alwaysVisible?: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
+  const nerdStats =
+    ctx.statsForNerdsEnabled && !message.streaming
+      ? deriveTurnNerdStats({
+          turnId: message.turnId,
+          activities: ctx.activities,
+          latestTurn: ctx.latestTurn,
+          firstContentAt: message.createdAt,
+          completedAt: message.updatedAt,
+        })
+      : null;
+  const nerdStatsParts = nerdStats ? formatNerdStatsParts(nerdStats) : [];
+  const showNerdStats = nerdStatsParts.length > 0;
 
   return (
     <div
       className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
-        alwaysVisible
+        "flex flex-col gap-0.5 text-xs tabular-nums transition-opacity duration-200",
+        alwaysVisible || showNerdStats
           ? "opacity-100"
           : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
         className,
       )}
     >
-      <AssistantCopyButton
-        message={message}
-        showCopyButton={showCopyButton}
-        streaming={copyStreaming}
-      />
-      {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
-          </TooltipPopup>
-        </Tooltip>
-      )}
+      <div className="flex items-center gap-2">
+        <AssistantCopyButton
+          message={message}
+          showCopyButton={showCopyButton}
+          streaming={copyStreaming}
+        />
+        {!message.streaming && (
+          <Tooltip>
+            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+              {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
+            </TooltipPopup>
+          </Tooltip>
+        )}
+      </div>
+      {showNerdStats ? (
+        <p className="text-muted-foreground/80 max-w-prose text-xs leading-4 tabular-nums">
+          {nerdStatsParts.join(" · ")}
+        </p>
+      ) : null}
     </div>
   );
 }

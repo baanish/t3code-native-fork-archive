@@ -10,7 +10,9 @@ import {
   EventId,
   isToolLifecycleItemType,
   ThreadId,
+  TURN_USAGE_ACTIVITY_KIND,
   type ThreadTokenUsageSnapshot,
+  type TurnUsageActivityPayload,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationThreadActivity,
@@ -349,9 +351,15 @@ function taskLinkageActivityFields(payload: Record<string, unknown>): Record<str
   return fields;
 }
 
+export interface RuntimeEventActivityExtras {
+  readonly firstContentAt?: string;
+  readonly startedAt?: string;
+}
+
 export function runtimeEventToActivities(
   event: ProviderRuntimeEvent,
   taskTitle?: string,
+  extras?: RuntimeEventActivityExtras,
 ): ReadonlyArray<OrchestrationThreadActivity> {
   const maybeSequence = (() => {
     const eventWithSequence = event as ProviderRuntimeEvent & { sessionSequence?: number };
@@ -890,6 +898,36 @@ export function runtimeEventToActivities(
       ];
     }
 
+    case "turn.completed":
+    case "turn.aborted": {
+      const tokenUsage = event.payload.tokenUsage;
+      const payload: TurnUsageActivityPayload = {
+        ...(tokenUsage ? { tokenUsage } : {}),
+        ...(extras?.firstContentAt ? { firstContentAt: extras.firstContentAt } : {}),
+        ...(extras?.startedAt ? { startedAt: extras.startedAt } : {}),
+        completedAt: event.createdAt,
+      };
+      if (
+        payload.tokenUsage === undefined &&
+        payload.firstContentAt === undefined &&
+        payload.startedAt === undefined
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: TURN_USAGE_ACTIVITY_KIND,
+          summary: "Turn usage",
+          payload,
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     default:
       break;
   }
@@ -950,8 +988,26 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(""),
   });
 
+  const firstContentAtByTurnKey = yield* Cache.make<string, string>({
+    capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
+    timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
+    lookup: () =>
+      Effect.die(
+        new Error("first content at should be read through getOption before initialization"),
+      ),
+  });
+
   const rememberTaskDescription = (threadId: ThreadId, taskId: string, description: string) =>
     Cache.set(taskDescriptionByTaskKey, providerTaskKey(threadId, taskId), description);
+
+  const rememberFirstContentAt = (threadId: ThreadId, turnId: TurnId, at: string) =>
+    Cache.getOption(firstContentAtByTurnKey, providerTurnKey(threadId, turnId)).pipe(
+      Effect.flatMap((existing) =>
+        Option.isSome(existing)
+          ? Effect.void
+          : Cache.set(firstContentAtByTurnKey, providerTurnKey(threadId, turnId), at),
+      ),
+    );
 
   // Entries are left in place after completion so replayed or duplicate
   // terminal events stay titled; TTL, capacity, and the session-exit sweep
@@ -1664,6 +1720,7 @@ const make = Effect.gen(function* () {
         });
         if (turnId) {
           yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
+          yield* rememberFirstContentAt(thread.id, turnId, now);
         }
 
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
@@ -2126,7 +2183,27 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(activityEvent, taskTitle);
+      let firstContentAt: string | undefined;
+      let startedAt: string | undefined;
+      if (isTerminalTurn && eventTurnId) {
+        firstContentAt = yield* Cache.getOption(
+          firstContentAtByTurnKey,
+          providerTurnKey(thread.id, eventTurnId),
+        ).pipe(Effect.map(Option.getOrUndefined));
+        const turnRow = yield* projectionTurnRepository.getByTurnId({
+          threadId: thread.id,
+          turnId: eventTurnId,
+        });
+        startedAt = Option.match(turnRow, {
+          onNone: () => undefined,
+          onSome: (row) => row.startedAt ?? row.requestedAt,
+        });
+      }
+
+      const activities = runtimeEventToActivities(activityEvent, taskTitle, {
+        ...(firstContentAt ? { firstContentAt } : {}),
+        ...(startedAt ? { startedAt } : {}),
+      });
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
