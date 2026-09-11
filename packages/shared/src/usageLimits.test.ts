@@ -770,7 +770,7 @@ describe("pools", () => {
       paceDetail: { status: "reserve", gapPercent: -7 },
     });
     const [session, week] = pools[0]!.windows;
-    // Two accounts: leftover is the mean even-spend gap of windows that report it.
+    // Two accounts: pace is the mean even-spend gap of windows that report it.
     const untimed = collectLimitPools(
       collectLimitAccounts(input).map((account) =>
         account.key === "hub:b"

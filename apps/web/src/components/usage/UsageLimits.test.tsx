@@ -154,7 +154,7 @@ describe("UsageLimitsPooled pacing", () => {
     expect(markup).toContain("Personal");
   });
 
-  it("averages leftover across two accounts on the same provider card", () => {
+  it("averages pace across two accounts on the same provider card", () => {
     const markup = renderToStaticMarkup(
       <UsageLimitsPooled
         presentations={presentations([

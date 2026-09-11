@@ -51,7 +51,7 @@ duration, Limits marks **in reserve** or **in deficit** against even spending, a
 green or red tick on the bar at even pace. That comparison is an allowance check, not a forecast.
 Pace is omitted when use is within two points of even pace, the window has barely started, the
 window has already reset, or the provider did not report a duration. When several accounts share
-a card, the leftover number is the average even-spend gap of the accounts that report that
+a card, the pace figure is the average even-spend gap of the accounts that report that
 window. Each segment still has its own tick.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex accounts with banked

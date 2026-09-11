@@ -600,7 +600,7 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
 /**
  * Mean even-spend gap of the windows that can report one. Accounts missing a
  * duration or reset are skipped; on-pace accounts count as a zero gap so they
- * pull the leftover toward even. Dead zone and rounding apply to the mean,
+ * pull the mean toward even. Dead zone and rounding apply to the mean,
  * not to each account first.
  */
 export function averagePaceDetail(
