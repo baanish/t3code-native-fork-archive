@@ -70,6 +70,7 @@ import {
 } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { deriveTurnStatsMaps } from "@t3tools/shared/turnStats";
 import {
   getTerminalLabel,
   nextTerminalId,
@@ -3232,6 +3233,10 @@ export default function ChatView(props: ChatViewProps) {
     timelineMessages,
     workLogEntries,
   ]);
+  const nerdStatsMaps = useMemo(
+    () => deriveTurnStatsMaps(activeThread?.activities ?? []),
+    [activeThread?.activities],
+  );
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -8299,6 +8304,9 @@ export default function ChatView(props: ChatViewProps) {
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
+                nerdStatsByTurnId={nerdStatsMaps.statsByTurnId}
+                nerdContextByTurnId={nerdStatsMaps.contextByTurnId}
+                nerdModelSlug={activeThread.modelSelection.model}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}

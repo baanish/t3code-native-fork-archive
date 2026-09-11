@@ -548,6 +548,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
+      ...(settings.statsForNerdsEnabled !== DEFAULT_UNIFIED_SETTINGS.statsForNerdsEnabled
+        ? ["Stats for nerds"]
+        : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
         : []),
@@ -607,6 +610,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
+      settings.statsForNerdsEnabled,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -713,6 +717,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      statsForNerdsEnabled: DEFAULT_UNIFIED_SETTINGS.statsForNerdsEnabled,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
@@ -2390,6 +2395,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
               }
               aria-label="Show skills in slash menu"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("stats-for-nerds")}
+          description="Show context window, tokens, tokens per second, and time to first token under each response."
+          resetAction={
+            settings.statsForNerdsEnabled !== DEFAULT_UNIFIED_SETTINGS.statsForNerdsEnabled ? (
+              <SettingResetButton
+                label="stats for nerds"
+                onClick={() =>
+                  updateSettings({
+                    statsForNerdsEnabled: DEFAULT_UNIFIED_SETTINGS.statsForNerdsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.statsForNerdsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ statsForNerdsEnabled: Boolean(checked) })
+              }
+              aria-label="Stats for nerds"
             />
           }
         />

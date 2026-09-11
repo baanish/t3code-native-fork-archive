@@ -441,6 +441,108 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("emits turn.stats with TTFT and tok/s on turn completion", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-stats-1");
+
+    await harness.emitAndDrain([
+      {
+        type: "turn.started",
+        eventId: asEventId("evt-turn-stats-started"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId,
+      },
+      {
+        type: "content.delta",
+        eventId: asEventId("evt-turn-stats-delta"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.040Z",
+        threadId,
+        turnId,
+        itemId: asItemId("item-stats-1"),
+        payload: { streamKind: "assistant_text", delta: "hello" },
+      },
+      {
+        type: "turn.completed",
+        eventId: asEventId("evt-turn-stats-completed"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        threadId,
+        turnId,
+        payload: {
+          state: "completed",
+          tokenUsage: {
+            usageScope: "main_agent",
+            usageStatus: "complete",
+            hasSubagents: false,
+            inputTokens: 300,
+            outputTokens: 163,
+          },
+        },
+      },
+    ]);
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.kind === "turn.stats" && activity.turnId === turnId,
+      ),
+    );
+    const stats = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) =>
+        activity.kind === "turn.stats" && activity.turnId === turnId,
+    );
+    expect(stats?.payload).toMatchObject({
+      usageStatus: "complete",
+      hasSubagents: false,
+      inputTokens: 300,
+      outputTokens: 163,
+      totalTokens: 463,
+      ttftMs: 40,
+      durationMs: 2000,
+    });
+    expect((stats?.payload as { tokensPerSec: number }).tokensPerSec).toBeCloseTo(81.5, 5);
+  });
+
+  it("skips turn.stats when a turn has no usage or timing", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-stats-empty");
+
+    await harness.emitAndDrain([
+      {
+        type: "turn.started",
+        eventId: asEventId("evt-turn-stats-empty-started"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "not-a-timestamp",
+        threadId,
+        turnId,
+      },
+      {
+        type: "turn.completed",
+        eventId: asEventId("evt-turn-stats-empty-completed"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "also-not-a-timestamp",
+        threadId,
+        turnId,
+        payload: { state: "completed" },
+      },
+    ]);
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.session?.status === "ready" && entry.session?.activeTurnId === null,
+    );
+    expect(
+      thread.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "turn.stats",
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     { delivery: "buffered", enableLegacyTokenStreaming: false },
     { delivery: "streamed", enableLegacyTokenStreaming: true },
