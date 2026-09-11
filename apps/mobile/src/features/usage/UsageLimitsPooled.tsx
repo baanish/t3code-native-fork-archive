@@ -159,7 +159,10 @@ function PoolWindowCard({
                   }}
                 />
               ) : null}
-              <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
+              <View
+                pointerEvents="none"
+                className="absolute inset-0 z-20 items-center justify-center"
+              >
                 <Text className="text-xs font-t3-medium tabular-nums text-foreground">
                   {index + 1}
                 </Text>
