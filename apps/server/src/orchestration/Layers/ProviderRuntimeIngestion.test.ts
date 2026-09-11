@@ -55,7 +55,11 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
-import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  ProviderRuntimeIngestionLive,
+  runtimeEventToActivities,
+} from "./ProviderRuntimeIngestion.ts";
+import { TURN_USAGE_ACTIVITY_KIND } from "@t3tools/contracts";
 import { DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
@@ -3961,6 +3965,112 @@ describe("ProviderRuntimeIngestion", () => {
     expect(activity?.summary).toBe("Compacted context 899K → 0 tokens");
     expect(activity?.tone).toBe("info");
     expect(activity?.payload).toMatchObject({ requestId: "message-compact" });
+  });
+
+  it("maps turn.completed usage into a hidden activity", () => {
+    const [activity] = runtimeEventToActivities(
+      {
+        type: "turn.completed",
+        eventId: asEventId("evt-turn-usage-map"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-usage-map"),
+        payload: {
+          state: "completed",
+          tokenUsage: {
+            usageStatus: "complete",
+            usageScope: "main_agent",
+            hasSubagents: false,
+            inputTokens: 8,
+            outputTokens: 3,
+          },
+        },
+      },
+      undefined,
+      { firstContentAt: "2026-01-01T00:00:00.400Z", startedAt: "2026-01-01T00:00:00.000Z" },
+    );
+    expect(activity?.kind).toBe(TURN_USAGE_ACTIVITY_KIND);
+    expect(activity?.payload).toMatchObject({
+      tokenUsage: { inputTokens: 8, outputTokens: 3 },
+      firstContentAt: "2026-01-01T00:00:00.400Z",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:02.000Z",
+    });
+  });
+
+  it("projects turn usage and first-token timing into a hidden activity", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-usage-1");
+
+    await harness.emitAndDrain([
+      {
+        type: "turn.started",
+        eventId: asEventId("evt-turn-usage-started"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId,
+      },
+      {
+        type: "content.delta",
+        eventId: asEventId("evt-turn-usage-first-token"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.250Z",
+        threadId,
+        turnId,
+        payload: { streamKind: "assistant_text", delta: "Hello" },
+      },
+      {
+        type: "content.delta",
+        eventId: asEventId("evt-turn-usage-later-token"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        threadId,
+        turnId,
+        payload: { streamKind: "assistant_text", delta: " world" },
+      },
+      {
+        type: "turn.completed",
+        eventId: asEventId("evt-turn-usage-completed"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        threadId,
+        turnId,
+        payload: {
+          state: "completed",
+          tokenUsage: {
+            usageStatus: "complete",
+            usageScope: "main_agent",
+            hasSubagents: false,
+            inputTokens: 120,
+            outputTokens: 40,
+            cachedInputTokens: 10,
+          },
+        },
+      },
+    ]);
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (candidate: ProviderRuntimeTestActivity) => candidate.kind === TURN_USAGE_ACTIVITY_KIND,
+      ),
+    );
+    const usageActivity = thread.activities.find(
+      (candidate: ProviderRuntimeTestActivity) => candidate.kind === TURN_USAGE_ACTIVITY_KIND,
+    );
+    expect(usageActivity?.payload).toMatchObject({
+      tokenUsage: {
+        usageStatus: "complete",
+        inputTokens: 120,
+        outputTokens: 40,
+        cachedInputTokens: 10,
+      },
+      firstContentAt: "2026-01-01T00:00:00.250Z",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:02.000Z",
+    });
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

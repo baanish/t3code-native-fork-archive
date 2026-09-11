@@ -190,9 +190,20 @@ describe("searchSettings", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("routes stats for nerds to general settings", () => {
+    expect(searchSettings("tokens per second")[0]).toMatchObject({
+      id: "stats-for-nerds",
+      to: "/settings/general",
+    });
+  });
+
   it("serves anchor props to panels from the catalog", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
+    expect(searchableSetting("stats-for-nerds")).toEqual({
+      id: "stats-for-nerds",
+      title: "Stats for nerds",
+    });
   });
 
   it("routes appearance settings to their current section", () => {

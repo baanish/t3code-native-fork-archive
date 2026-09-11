@@ -429,6 +429,16 @@ describe("ClientSettings context window meter", () => {
   });
 });
 
+describe("ClientSettings stats for nerds", () => {
+  it("defaults off and preserves an explicit opt-in", () => {
+    expect(decodeClientSettings({}).statsForNerdsEnabled).toBe(false);
+    expect(decodeClientSettings({ statsForNerdsEnabled: true }).statsForNerdsEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ statsForNerdsEnabled: true }).statsForNerdsEnabled).toBe(
+      true,
+    );
+  });
+});
+
 describe("ClientSettings composer collapse", () => {
   it("collapses on scroll by default and accepts opting out", () => {
     expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);
