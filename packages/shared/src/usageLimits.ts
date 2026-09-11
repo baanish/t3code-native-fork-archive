@@ -382,8 +382,9 @@ export interface LimitPoolWindow {
   readonly remainingPercent: number;
   readonly usedPercent: number;
   /**
-   * Even-spend pace for a single-account pool. Multi-account averages hide
-   * opposing reserve and deficit, so those cards omit it.
+   * Mean even-spend gap of the accounts that report this window. A one-account
+   * card is that account's pace; several accounts average, so a reserve and a
+   * deficit can cancel.
    */
   readonly pace: LimitPace | null;
   readonly paceDetail: LimitPaceDetail | null;
@@ -469,10 +470,10 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Pace is per account. Averaging two clocks can cancel a reserve against a
-    // deficit and read as "on pace" when neither account is.
-    const only = accounts.length === 1 ? members[0] : undefined;
-    const detail = only ? paceDetail(only.window, now) : null;
+    const detail = averagePaceDetail(
+      members.map((member) => member.window),
+      now,
+    );
     const resets = members
       .flatMap((member) => {
         const at = resetMillis(member.window);
@@ -593,13 +594,33 @@ function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceSt
  * inside the dead zone, or the inputs are not finite.
  */
 export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
-  const elapsed = elapsedShare(window, now);
-  if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) return null;
-  const usedPercent = clampPercent(window.usedPercent);
-  if (usedPercent === null) return null;
-  const expectedUsedPercent = elapsed * 100;
-  const gap = usedPercent - expectedUsedPercent;
-  if (!Number.isFinite(gap)) return null;
+  return averagePaceDetail([window], now);
+}
+
+/**
+ * Mean even-spend gap of the windows that can report one. Accounts missing a
+ * duration or reset are skipped; on-pace accounts count as a zero gap so they
+ * pull the leftover toward even. Dead zone and rounding apply to the mean,
+ * not to each account first.
+ */
+export function averagePaceDetail(
+  windows: readonly ServerProviderUsageWindow[],
+  now: number,
+): LimitPaceDetail | null {
+  const parts: { gap: number; elapsed: number; expectedUsedPercent: number }[] = [];
+  for (const window of windows) {
+    const elapsed = elapsedShare(window, now);
+    if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) continue;
+    const usedPercent = clampPercent(window.usedPercent);
+    if (usedPercent === null) continue;
+    const expectedUsedPercent = elapsed * 100;
+    const gap = usedPercent - expectedUsedPercent;
+    if (!Number.isFinite(gap)) continue;
+    parts.push({ gap, elapsed, expectedUsedPercent });
+  }
+  if (parts.length === 0) return null;
+  const n = parts.length;
+  const gap = parts.reduce((sum, part) => sum + part.gap, 0) / n;
   if (Math.abs(gap) <= PACE_DEAD_ZONE) return null;
   const gapPercent = displayedPaceGap(gap);
   const { pace, status } = paceFromGap(gapPercent);
@@ -607,8 +628,8 @@ export function paceDetail(window: ServerProviderUsageWindow, now: number): Limi
     pace,
     status,
     gapPercent,
-    expectedUsedPercent,
-    elapsedShare: elapsed,
+    expectedUsedPercent: parts.reduce((sum, part) => sum + part.expectedUsedPercent, 0) / n,
+    elapsedShare: parts.reduce((sum, part) => sum + part.elapsed, 0) / n,
   };
 }
 

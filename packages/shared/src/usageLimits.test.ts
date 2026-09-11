@@ -19,6 +19,7 @@ import {
   collectLimitPools,
   collectLimitSources,
   collectLimitsGroups,
+  averagePaceDetail,
   elapsedShare,
   formatAllowancePace,
   formatResetsIn,
@@ -116,6 +117,19 @@ describe("pace", () => {
     const session = { ...window, usedPercent: 51, resetsAt: "2026-09-03T13:15:00.000Z" };
     expect(elapsedShare(session, now)).toBeCloseTo(0.75);
     expect(formatAllowancePace(paceDetail(session, now)!).marker).toBe("24% in reserve");
+  });
+
+  it("averages even-spend gaps across windows that can report pace", () => {
+    const reserve = window;
+    const deficit = { ...window, usedPercent: 70 };
+    expect(averagePaceDetail([reserve, deficit], now)).toMatchObject({
+      status: "reserve",
+      gapPercent: -5,
+    });
+    expect(averagePaceDetail([reserve, { ...window, usedPercent: 80 }], now)).toBeNull();
+    expect(
+      averagePaceDetail([reserve, { ...deficit, windowDurationMins: undefined }], now),
+    ).toMatchObject({ status: "reserve", gapPercent: -20 });
   });
 });
 
@@ -756,7 +770,7 @@ describe("pools", () => {
       paceDetail: { status: "reserve", gapPercent: -7 },
     });
     const [session, week] = pools[0]!.windows;
-    // Two accounts in one pool: quota still averages, pace does not.
+    // Two accounts: leftover is the mean even-spend gap of windows that report it.
     const untimed = collectLimitPools(
       collectLimitAccounts(input).map((account) =>
         account.key === "hub:b"
@@ -777,8 +791,8 @@ describe("pools", () => {
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: null,
-      paceDetail: null,
+      pace: "under",
+      paceDetail: { status: "reserve", gapPercent: -10 },
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),
@@ -790,8 +804,8 @@ describe("pools", () => {
       id: "seven_day",
       remainingPercent: 80,
       members: [{}],
-      pace: null,
-      paceDetail: null,
+      pace: "under",
+      paceDetail: { status: "reserve", gapPercent: -37 },
     });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
     const mixed = collectLimitPools(

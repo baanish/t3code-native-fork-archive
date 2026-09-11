@@ -50,9 +50,9 @@ part of a segment is what that reset restores. When a window includes both a res
 duration, Limits marks **in reserve** or **in deficit** against even spending, and places a
 green or red tick on the bar at even pace. That comparison is an allowance check, not a forecast.
 Pace is omitted when use is within two points of even pace, the window has barely started, the
-window has already reset, or the provider did not report a duration. It is also omitted when the
-provider pool has more than one account, even if only one of them reports that window, so
-opposing reserve and deficit cannot cancel out.
+window has already reset, or the provider did not report a duration. When several accounts share
+a card, the leftover number is the average even-spend gap of the accounts that report that
+window. Each segment still has its own tick.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex accounts with banked
 reset credits show a ticket count and the **Use reset** action in the account details. On narrow screens, numbered rows below

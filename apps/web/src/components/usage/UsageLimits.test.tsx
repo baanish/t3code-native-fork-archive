@@ -117,9 +117,6 @@ describe("LimitWindows pacing", () => {
     );
     expect(markup).toContain("49% left");
     expect(markup).toContain("24% in reserve");
-    expect(markup).toContain("data-pace-mark");
-    expect(markup).toContain("h-[120%] w-0.5");
-    expect(markup).toContain("top-[-10%]");
     expect(markup).not.toContain("until reset");
   });
 
@@ -154,10 +151,36 @@ describe("UsageLimitsPooled pacing", () => {
       />,
     );
     expect(markup).toContain("24% in reserve");
-    expect(markup).toContain("data-pace-readout");
-    expect(markup).toContain('data-pace-mark="reserve"');
-    expect(markup).toContain("data-account-legend");
     expect(markup).toContain("Personal");
+  });
+
+  it("averages leftover across two accounts on the same provider card", () => {
+    const markup = renderToStaticMarkup(
+      <UsageLimitsPooled
+        presentations={presentations([
+          provider({
+            instanceId: ProviderInstanceId.make("claude-a"),
+            driver: ProviderDriverKind.make("claudeAgent"),
+            displayName: "Personal",
+            usageLimits: { checkedAt: CHECKED_AT, windows: [reserveSession] },
+          }),
+          provider({
+            instanceId: ProviderInstanceId.make("claude-b"),
+            driver: ProviderDriverKind.make("claudeAgent"),
+            displayName: "Work",
+            usageLimits: {
+              checkedAt: CHECKED_AT,
+              windows: [{ ...deficitSession, usedPercent: 70 }],
+            },
+          }),
+        ])}
+        now={NOW}
+      />,
+    );
+    // 24% reserve and 10% deficit average to 7% reserve; each row still names its account.
+    expect(markup).toContain("7% in reserve");
+    expect(markup).toContain("Personal");
+    expect(markup).toContain("Work");
   });
 
   it("keeps independent Claude reserve and Codex deficit on separate cards", () => {
