@@ -227,6 +227,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "stats-for-nerds",
+    title: "Stats for nerds",
+    to: "/settings/general",
+    searchTerms: ["tokens context window usage per second ttft time to first token response debug"],
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",

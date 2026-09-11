@@ -29,6 +29,13 @@ const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import {
+  resolveNerdStatsView,
+  type TurnContextRef,
+  type TurnStatsPayload,
+} from "@t3tools/shared/turnStats";
+import { useClientSettings } from "~/hooks/useSettings";
+import { TurnStatsLine } from "./TurnStatsLine";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
@@ -222,6 +229,9 @@ interface TimelineRowSharedState {
   workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  nerdStatsByTurnId: ReadonlyMap<string, TurnStatsPayload>;
+  nerdContextByTurnId: ReadonlyMap<string, TurnContextRef>;
+  nerdModelSlug: string | null;
 }
 
 interface TimelineRowActivityState {
@@ -356,7 +366,14 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: CitationHistoryPage | null;
+  /** Per-turn nerd stats; empty when the thread has none or stats are off. */
+  nerdStatsByTurnId?: ReadonlyMap<string, TurnStatsPayload>;
+  nerdContextByTurnId?: ReadonlyMap<string, TurnContextRef>;
+  nerdModelSlug?: string | null;
 }
+
+const EMPTY_NERD_STATS_BY_TURN_ID: ReadonlyMap<string, TurnStatsPayload> = new Map();
+const EMPTY_NERD_CONTEXT_BY_TURN_ID: ReadonlyMap<string, TurnContextRef> = new Map();
 
 // ---------------------------------------------------------------------------
 // MessagesTimeline — list owner
@@ -403,6 +420,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
+  nerdStatsByTurnId = EMPTY_NERD_STATS_BY_TURN_ID,
+  nerdContextByTurnId = EMPTY_NERD_CONTEXT_BY_TURN_ID,
+  nerdModelSlug = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
@@ -761,6 +781,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      nerdStatsByTurnId,
+      nerdContextByTurnId,
+      nerdModelSlug,
     }),
     [
       readyCitationRequest,
@@ -785,6 +808,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      nerdStatsByTurnId,
+      nerdContextByTurnId,
+      nerdModelSlug,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1727,32 +1753,48 @@ function AssistantMessageMeta({
   alwaysVisible?: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
+  const statsForNerdsEnabled = useClientSettings((settings) => settings.statsForNerdsEnabled);
+  const nerdStatsView = useMemo(() => {
+    if (!statsForNerdsEnabled || message.turnId === null || message.streaming) return null;
+    return resolveNerdStatsView({
+      stats: ctx.nerdStatsByTurnId.get(message.turnId) ?? null,
+      context: ctx.nerdContextByTurnId.get(message.turnId) ?? null,
+    });
+  }, [
+    statsForNerdsEnabled,
+    message.turnId,
+    message.streaming,
+    ctx.nerdStatsByTurnId,
+    ctx.nerdContextByTurnId,
+  ]);
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
-        alwaysVisible
-          ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
-        className,
-      )}
-    >
-      <AssistantCopyButton
-        message={message}
-        showCopyButton={showCopyButton}
-        streaming={copyStreaming}
-      />
-      {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
-          </TooltipPopup>
-        </Tooltip>
-      )}
+    <div className={cn("flex flex-col gap-0.5", className)}>
+      <div
+        className={cn(
+          "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+          alwaysVisible
+            ? "opacity-100"
+            : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
+        )}
+      >
+        <AssistantCopyButton
+          message={message}
+          showCopyButton={showCopyButton}
+          streaming={copyStreaming}
+        />
+        {!message.streaming && (
+          <Tooltip>
+            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+              {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
+            </TooltipPopup>
+          </Tooltip>
+        )}
+      </div>
+      {nerdStatsView ? <TurnStatsLine model={ctx.nerdModelSlug} view={nerdStatsView} /> : null}
     </div>
   );
 }

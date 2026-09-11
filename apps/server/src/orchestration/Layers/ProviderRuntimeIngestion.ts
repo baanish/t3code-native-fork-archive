@@ -12,6 +12,7 @@ import {
   ThreadId,
   type ThreadTokenUsageSnapshot,
   TurnId,
+  type TurnTokenUsage,
   type OrchestrationCheckpointSummary,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
@@ -95,6 +96,75 @@ interface AssistantSegmentState {
   baseKey: string;
   nextSegmentIndex: number;
   activeMessageId: MessageId | null;
+}
+
+interface TurnStatsTiming {
+  readonly startedAtMs: number | null;
+  readonly firstTokenAtMs: number | null;
+}
+
+/**
+ * Payload for the `turn.stats` activity clients render behind the
+ * stats-for-nerds toggle. Returns null when neither token usage nor timing
+ * is known, so turns with no measurable data stay silent.
+ */
+function buildTurnStatsPayload(input: {
+  readonly tokenUsage: TurnTokenUsage | undefined;
+  readonly timing: TurnStatsTiming | undefined;
+  readonly completedAtMs: number | null;
+}): Record<string, unknown> | null {
+  const { tokenUsage, timing, completedAtMs } = input;
+  const startedAtMs = timing?.startedAtMs ?? null;
+  const firstTokenAtMs = timing?.firstTokenAtMs ?? null;
+  const ttftMs =
+    startedAtMs !== null && firstTokenAtMs !== null && firstTokenAtMs >= startedAtMs
+      ? firstTokenAtMs - startedAtMs
+      : null;
+  const durationMs =
+    startedAtMs !== null && completedAtMs !== null && completedAtMs >= startedAtMs
+      ? completedAtMs - startedAtMs
+      : null;
+
+  const inputTokens = tokenUsage?.inputTokens ?? null;
+  const outputTokens = tokenUsage?.outputTokens ?? null;
+  const totalTokens =
+    inputTokens !== null && outputTokens !== null
+      ? inputTokens + outputTokens
+      : (inputTokens ?? outputTokens);
+  const tokensPerSec =
+    outputTokens !== null && durationMs !== null && durationMs > 0
+      ? outputTokens / (durationMs / 1000)
+      : null;
+
+  const hasTokens =
+    inputTokens !== null ||
+    outputTokens !== null ||
+    (tokenUsage?.cachedInputTokens ?? null) !== null ||
+    (tokenUsage?.cacheCreationTokens ?? null) !== null ||
+    (tokenUsage?.reasoningTokens ?? null) !== null;
+  if (!hasTokens && ttftMs === null && durationMs === null) {
+    return null;
+  }
+
+  return {
+    usageStatus: tokenUsage?.usageStatus ?? "unavailable",
+    hasSubagents: tokenUsage?.hasSubagents ?? false,
+    ...(inputTokens !== null ? { inputTokens } : {}),
+    ...(outputTokens !== null ? { outputTokens } : {}),
+    ...(tokenUsage?.cachedInputTokens !== undefined
+      ? { cachedInputTokens: tokenUsage.cachedInputTokens }
+      : {}),
+    ...(tokenUsage?.cacheCreationTokens !== undefined
+      ? { cacheCreationTokens: tokenUsage.cacheCreationTokens }
+      : {}),
+    ...(tokenUsage?.reasoningTokens !== undefined
+      ? { reasoningTokens: tokenUsage.reasoningTokens }
+      : {}),
+    ...(totalTokens !== null ? { totalTokens } : {}),
+    ...(ttftMs !== null ? { ttftMs } : {}),
+    ...(durationMs !== null ? { durationMs } : {}),
+    ...(tokensPerSec !== null ? { tokensPerSec } : {}),
+  };
 }
 
 const TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY = 10_000;
@@ -963,6 +1033,44 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // First-token timing per turn for the `turn.stats` nerd-stats activity.
+  // Buffered delivery hides first-token time from the projection (the message
+  // only lands at completion), so ingestion stamps it when the first
+  // assistant delta arrives. Entries survive completion so replayed terminal
+  // events re-emit identical payloads; TTL and the session-exit sweep bound
+  // the cache.
+  const turnStatsTimingByTurnKey = yield* Cache.make<string, TurnStatsTiming>({
+    capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
+    timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
+    lookup: () => Effect.succeed({ startedAtMs: null, firstTokenAtMs: null }),
+  });
+
+  const recordTurnStatsStart = (threadId: ThreadId, turnId: TurnId, startedAtMs: number | null) =>
+    Effect.gen(function* () {
+      if (startedAtMs === null) return;
+      const key = providerTurnKey(threadId, turnId);
+      const existing = Option.getOrUndefined(
+        yield* Cache.getOption(turnStatsTimingByTurnKey, key),
+      ) ?? { startedAtMs: null, firstTokenAtMs: null };
+      if (existing.startedAtMs !== null) return;
+      yield* Cache.set(turnStatsTimingByTurnKey, key, { ...existing, startedAtMs });
+    });
+
+  const recordTurnStatsFirstToken = (
+    threadId: ThreadId,
+    turnId: TurnId,
+    firstTokenAtMs: number | null,
+  ) =>
+    Effect.gen(function* () {
+      if (firstTokenAtMs === null) return;
+      const key = providerTurnKey(threadId, turnId);
+      const existing = Option.getOrUndefined(
+        yield* Cache.getOption(turnStatsTimingByTurnKey, key),
+      ) ?? { startedAtMs: null, firstTokenAtMs: null };
+      if (existing.firstTokenAtMs !== null) return;
+      yield* Cache.set(turnStatsTimingByTurnKey, key, { ...existing, firstTokenAtMs });
+    });
+
   const resolveThreadRuntimeContext = Effect.fn("resolveThreadRuntimeContext")(function* (
     threadId: ThreadId,
   ) {
@@ -1347,6 +1455,7 @@ const make = Effect.gen(function* () {
       const assistantSegmentKeys = Array.from(yield* Cache.keys(assistantSegmentStateByTurnKey));
       const proposedPlanKeys = Array.from(yield* Cache.keys(bufferedProposedPlanById));
       const taskDescriptionKeys = Array.from(yield* Cache.keys(taskDescriptionByTaskKey));
+      const turnStatsTimingKeys = Array.from(yield* Cache.keys(turnStatsTimingByTurnKey));
       yield* Effect.forEach(
         turnKeys,
         (key) =>
@@ -1386,6 +1495,12 @@ const make = Effect.gen(function* () {
         taskDescriptionKeys,
         (key) =>
           key.startsWith(prefix) ? Cache.invalidate(taskDescriptionByTaskKey, key) : Effect.void,
+        { concurrency: 1 },
+      ).pipe(Effect.asVoid);
+      yield* Effect.forEach(
+        turnStatsTimingKeys,
+        (key) =>
+          key.startsWith(prefix) ? Cache.invalidate(turnStatsTimingByTurnKey, key) : Effect.void,
         { concurrency: 1 },
       ).pipe(Effect.asVoid);
     });
@@ -1487,6 +1602,13 @@ const make = Effect.gen(function* () {
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
       const isTerminalTurn = event.type === "turn.completed" || event.type === "turn.aborted";
+      const eventAtMs = (() => {
+        const parsed = Date.parse(event.createdAt);
+        return Number.isFinite(parsed) ? parsed : null;
+      })();
+      if (event.type === "turn.started" && eventTurnId) {
+        yield* recordTurnStatsStart(thread.id, eventTurnId, eventAtMs);
+      }
       const isCompactedThreadState =
         event.type === "thread.state.changed" && event.payload.state === "compacted";
       const pendingTurnStart =
@@ -1664,6 +1786,7 @@ const make = Effect.gen(function* () {
         });
         if (turnId) {
           yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
+          yield* recordTurnStatsFirstToken(thread.id, turnId, eventAtMs);
         }
 
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
@@ -1907,6 +2030,38 @@ const make = Effect.gen(function* () {
             turnId,
             updatedAt: now,
           });
+
+          const turnStatsTiming = Option.getOrUndefined(
+            yield* Cache.getOption(turnStatsTimingByTurnKey, providerTurnKey(thread.id, turnId)),
+          );
+          const turnStatsPayload = buildTurnStatsPayload({
+            tokenUsage:
+              event.type === "turn.completed" || event.type === "turn.aborted"
+                ? event.payload.tokenUsage
+                : undefined,
+            timing: turnStatsTiming,
+            completedAtMs: eventAtMs,
+          });
+          if (turnStatsPayload) {
+            yield* orchestrationEngine.dispatch({
+              type: "thread.activity.append",
+              commandId: yield* providerCommandId(event, "turn-stats"),
+              threadId: thread.id,
+              activity: {
+                id: EventId.make(`${event.eventId}:turn-stats`),
+                createdAt: now,
+                tone: "info",
+                kind: "turn.stats",
+                summary: "Turn stats",
+                payload: turnStatsPayload,
+                turnId,
+              },
+              createdAt: now,
+            });
+          }
+          // Timing stays cached so a replayed terminal event re-emits the same
+          // payload instead of a degraded one; TTL and the session-exit sweep
+          // bound the cache.
         }
       }
 
