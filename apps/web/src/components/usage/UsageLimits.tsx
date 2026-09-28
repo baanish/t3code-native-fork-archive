@@ -22,7 +22,6 @@ import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
-import { cn } from "../../lib/utils";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -64,24 +63,13 @@ function paceMarkClass(detail: LimitPaceDetail): string {
 /**
  * Thin tick on the bar at even pace. Green is reserve, red is deficit.
  * It overshoots the track by 10% on each side so it reads as a mark, not a stub.
- * Near-even gaps never reach here — `paceDetail` is already null.
+ * Near-even gaps never reach here. `paceDetail` is already null.
  */
-export function ExpectedPaceMark({
-  detail,
-  className,
-}: {
-  readonly detail: LimitPaceDetail;
-  readonly className?: string;
-}) {
+export function ExpectedPaceMark({ detail }: { readonly detail: LimitPaceDetail }) {
   return (
     <span
-      data-pace-mark={detail.status}
       aria-hidden
-      className={cn(
-        "pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background",
-        paceMarkClass(detail),
-        className,
-      )}
+      className={`pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background ${paceMarkClass(detail)}`}
       style={{ left: `${evenPaceRemainingPercent(detail)}%` }}
     />
   );
@@ -107,7 +95,6 @@ export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
       <TooltipTrigger
         render={
           <span
-            data-pace-readout=""
             role="img"
             aria-label={readout.explanation}
             tabIndex={0}
@@ -149,8 +136,8 @@ function WindowBar({
     : null;
   const pace = detail ? formatAllowancePace(detail).marker : null;
   const summary = `${window.label}: ${remaining}% left${pace ? `, ${pace}` : ""}${
-    resetsIn ? `, ${resetsIn}` : ""
-  }`;
+    mark !== null ? ", the line is where even spending would be" : ""
+  }${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
     <Tooltip>
@@ -193,6 +180,9 @@ function WindowBar({
               {resetsIn ? ` · ${resetsIn}` : ""}
             </span>
           ) : null}
+          {mark !== null ? (
+            <span className="text-muted-foreground">The line is where even spending would be.</span>
+          ) : null}
         </div>
       </TooltipPopup>
     </Tooltip>
@@ -230,13 +220,13 @@ export function LimitWindows({
           <Fragment key={window.id}>
             <span className="flex min-w-0 items-center gap-2 text-xs">
               <span className="truncate text-muted-foreground">{window.label}</span>
-              <span className="ms-auto flex shrink-0 items-center gap-1.5 font-medium text-foreground tabular-nums">
+              <span className="ms-auto shrink-0 font-medium text-foreground tabular-nums">
                 {remainingPercent(window)}% left
-                {detail ? <PaceReadout detail={detail} /> : null}
               </span>
             </span>
             <WindowBar color={color} window={window} now={now} />
-            <span className="shrink-0 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+            <span className="flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              {detail ? <PaceReadout detail={detail} /> : null}
               {resetsIn ?? ""}
             </span>
           </Fragment>

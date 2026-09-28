@@ -15,6 +15,7 @@ import {
   formatDuration,
   formatResetsIn,
   type LimitPaceDetail,
+  type LimitPaceStatus,
   limitsNotice,
   paceDetail,
   remainingPercent,
@@ -39,6 +40,36 @@ function useBarColor(driver: Driver): string | null {
   const kind: UsageProviderKind | null =
     driver === "codex" ? "codex" : driver === "claudeAgent" ? "claude" : null;
   return kind ? colors[kind] : null;
+}
+
+/** Tick on a usage bar. A border keeps the color readable on the provider fill. */
+export function PaceMark({
+  status,
+  percent,
+}: {
+  readonly status: LimitPaceStatus | "even";
+  readonly percent: number;
+}) {
+  if (status === "even") {
+    return (
+      <View
+        pointerEvents="none"
+        className="absolute inset-y-0 w-px bg-foreground opacity-60"
+        style={{ left: `${percent}%` }}
+      />
+    );
+  }
+  return (
+    <View
+      pointerEvents="none"
+      className={
+        status === "deficit"
+          ? "absolute z-10 w-1 rounded-full border border-background bg-red-500"
+          : "absolute z-10 w-1 rounded-full border border-background bg-emerald-500"
+      }
+      style={{ left: `${percent}%`, marginLeft: -2, top: "-10%", height: "120%" }}
+    />
+  );
 }
 
 /** Arrow plus gap percent. The words stay on the accessibility label. */
@@ -105,19 +136,9 @@ function WindowRow(props: {
           <View style={{ flex: 100 - remaining }} />
         </View>
         {detail ? (
-          <View
-            className={
-              detail.status === "deficit"
-                ? "absolute top-0 h-3.5 w-0.5 rounded-full bg-red-500"
-                : "absolute top-0 h-3.5 w-0.5 rounded-full bg-emerald-500"
-            }
-            style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -1 }}
-          />
+          <PaceMark status={detail.status} percent={evenPaceRemainingPercent(detail)} />
         ) : mark !== null ? (
-          <View
-            className="absolute top-1 h-1.5 w-px bg-foreground opacity-60"
-            style={{ left: `${mark}%` }}
-          />
+          <PaceMark status="even" percent={mark} />
         ) : null}
       </View>
       {resetsIn ? (

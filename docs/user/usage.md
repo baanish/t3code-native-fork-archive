@@ -70,14 +70,10 @@ list. Each window card shows how much of the pool is left and a bar with one seg
 kept in the same column across windows. Accounts are ordered by their 5-hour reset, soonest
 first, or by the first available window when no account reports a 5-hour limit. A gap means the
 account does not report that window. When the provider reports reset times, the card also says
-when the next reset lands and how much it hands back. The hatched
-part of a segment is what that reset restores. When a window includes both a reset time and a
-duration, a hairline on the bar marks even pace. When use is more than two points off that line,
-the hairline becomes a green or red tick and Limits marks **in reserve** or **in deficit**. That
-comparison is an allowance check, not a forecast. The pace figure is omitted when the window has
-barely started, has already reset, or the provider did not report a duration. When several
-accounts share a card, the pace figure is the average even-spend gap of the accounts that report
-that window, so a reserve and a deficit can cancel. Each segment still has its own tick.
+when the next reset lands and how much it hands back. When a window includes a reset time and a
+duration, Limits compares use with even spending across that window. The figure is an allowance
+check, not a forecast. On a shared card it is the average gap, and only when every account on
+the card can report one, so a reserve and a deficit can cancel.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
 with banked reset credits show a ticket count and the **Use reset** action in the account details.

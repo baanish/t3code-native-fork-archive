@@ -27,7 +27,7 @@ import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
-import { PaceChip, ResetCredits } from "./UsageLimitsSection";
+import { PaceChip, PaceMark, ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
@@ -144,26 +144,9 @@ function PoolWindowCard({
                 />
               </View>
               {rowPace ? (
-                <View
-                  pointerEvents="none"
-                  className={
-                    rowPace.status === "deficit"
-                      ? "absolute z-10 w-0.5 rounded-full bg-red-500"
-                      : "absolute z-10 w-0.5 rounded-full bg-emerald-500"
-                  }
-                  style={{
-                    left: `${evenPaceRemainingPercent(rowPace)}%`,
-                    marginLeft: -1,
-                    top: "-10%",
-                    height: "120%",
-                  }}
-                />
+                <PaceMark status={rowPace.status} percent={evenPaceRemainingPercent(rowPace)} />
               ) : mark !== null ? (
-                <View
-                  pointerEvents="none"
-                  className="absolute inset-y-0 w-px bg-foreground opacity-60"
-                  style={{ left: `${mark}%` }}
-                />
+                <PaceMark status="even" percent={mark} />
               ) : null}
               <View
                 pointerEvents="none"
@@ -213,9 +196,7 @@ function PoolWindowCard({
                 ) : null}
                 {credits ? (
                   <>
-                    {resetsIn ? (
-                      <Text className="text-xs text-foreground-tertiary">·</Text>
-                    ) : null}
+                    {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
                     <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
                     <Text className="text-xs font-t3-medium tabular-nums text-foreground">
                       {credits}

@@ -277,7 +277,6 @@ export interface LimitPoolMember {
   readonly window: ServerProviderUsageWindow;
 }
 
-export type LimitPace = "ahead" | "under";
 export type LimitPaceStatus = "reserve" | "deficit";
 
 /**
@@ -286,7 +285,6 @@ export type LimitPaceStatus = "reserve" | "deficit";
  * the remaining quota will be spent.
  */
 export interface LimitPaceDetail {
-  readonly pace: LimitPace;
   readonly status: LimitPaceStatus;
   /** `usedPercent - expectedUsedPercent`, rounded. Positive is deficit. */
   readonly gapPercent: number;
@@ -312,11 +310,9 @@ export interface LimitPoolWindow {
   readonly remainingPercent: number;
   readonly usedPercent: number;
   /**
-   * Mean even-spend gap of the accounts that report this window. A one-account
-   * card is that account's pace; several accounts average, so a reserve and a
-   * deficit can cancel.
+   * Mean even-spend gap when every account on the card can report one.
+   * A reserve and a deficit can cancel. Null when any account lacks a clock.
    */
-  readonly pace: LimitPace | null;
   readonly paceDetail: LimitPaceDetail | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
@@ -439,7 +435,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      pace: detail?.pace ?? null,
       paceDetail: detail,
       resets,
     };
@@ -492,27 +487,18 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
 const PACE_MIN_ELAPSED = 0.03;
 
 /**
- * Hide pace when the raw used-vs-expected gap is this close to even. A 1–2
- * point drift is noise, not a reserve or deficit worth marking.
+ * Hide pace when the displayed whole-point gap is this close to even. A raw
+ * gap that rounds to 2 points stays hidden.
  */
 const PACE_DEAD_ZONE = 2;
 
 /**
  * Signed whole-point gap: absolute value first, then round. Rounding the
- * signed gap in JavaScript pulls negative halves toward zero (`-7.5` → `-7`)
+ * signed gap in JavaScript pulls negative halves toward zero (`-7.5` to `-7`)
  * and understates reserve.
  */
 function displayedPaceGap(delta: number): number {
-  if (!Number.isFinite(delta) || delta === 0) return 0;
   return Math.sign(delta) * Math.round(Math.abs(delta));
-}
-
-/**
- * Usage against the clock. Spending evenly leaves the same share of quota as
- * there is time left in the window. Gaps inside the dead zone have no pace.
- */
-export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
-  return paceDetail(window, now)?.pace ?? null;
 }
 
 function clampPercent(value: number): number | null {
@@ -520,54 +506,43 @@ function clampPercent(value: number): number | null {
   return Math.max(0, Math.min(100, value));
 }
 
-function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceStatus } {
-  // Callers drop a raw gap inside the dead zone before this, so zero never arrives.
-  if (gapPercent < 0) return { pace: "under", status: "reserve" };
-  return { pace: "ahead", status: "deficit" };
-}
-
 /**
  * Even-spend comparison for one provider window. The window runs from 0% to
  * 100% used over `windowDurationMins` and ends at `resetsAt`. Expected use
  * is the elapsed share of that span; reserve or deficit is used minus that
  * expected value. Returns null when duration or reset is missing, the reset
- * is outside the window, the clock has barely started, the raw gap is
- * inside the dead zone, or the inputs are not finite.
+ * is outside the window, the clock has barely started, the rounded gap is
+ * inside the dead zone, or the used percent is not finite.
  */
 export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
   return averagePaceDetail([window], now);
 }
 
 /**
- * Mean even-spend gap of the windows that can report one. Accounts missing a
- * duration or reset are skipped; on-pace accounts count as a zero gap so they
- * pull the mean toward even. Dead zone and rounding apply to the mean,
- * not to each account first.
+ * Mean even-spend gap. Every window has to report a gap. If one lacks a
+ * reset, a duration, or enough elapsed time, the mean is omitted so it
+ * describes the same accounts as the pooled quota. The dead zone applies to
+ * the rounded mean.
  */
 export function averagePaceDetail(
   windows: readonly ServerProviderUsageWindow[],
   now: number,
 ): LimitPaceDetail | null {
+  if (windows.length === 0) return null;
   const parts: { gap: number; elapsed: number; expectedUsedPercent: number }[] = [];
   for (const window of windows) {
     const elapsed = elapsedShare(window, now);
-    if (elapsed === null || elapsed < PACE_MIN_ELAPSED || elapsed >= 1) continue;
+    if (elapsed === null || elapsed < PACE_MIN_ELAPSED) return null;
     const usedPercent = clampPercent(window.usedPercent);
-    if (usedPercent === null) continue;
+    if (usedPercent === null) return null;
     const expectedUsedPercent = elapsed * 100;
-    const gap = usedPercent - expectedUsedPercent;
-    if (!Number.isFinite(gap)) continue;
-    parts.push({ gap, elapsed, expectedUsedPercent });
+    parts.push({ gap: usedPercent - expectedUsedPercent, elapsed, expectedUsedPercent });
   }
-  if (parts.length === 0) return null;
   const n = parts.length;
-  const gap = parts.reduce((sum, part) => sum + part.gap, 0) / n;
-  if (Math.abs(gap) <= PACE_DEAD_ZONE) return null;
-  const gapPercent = displayedPaceGap(gap);
-  const { pace, status } = paceFromGap(gapPercent);
+  const gapPercent = displayedPaceGap(parts.reduce((sum, part) => sum + part.gap, 0) / n);
+  if (Math.abs(gapPercent) <= PACE_DEAD_ZONE) return null;
   return {
-    pace,
-    status,
+    status: gapPercent < 0 ? "reserve" : "deficit",
     gapPercent,
     expectedUsedPercent: parts.reduce((sum, part) => sum + part.expectedUsedPercent, 0) / n,
     elapsedShare: parts.reduce((sum, part) => sum + part.elapsed, 0) / n,
@@ -583,10 +558,7 @@ export function evenPaceRemainingPercent(detail: LimitPaceDetail): number {
  * Even-pace position on the bar, including windows inside the dead zone.
  * Null when duration or reset cannot place the clock.
  */
-export function evenPaceMarkPercent(
-  window: ServerProviderUsageWindow,
-  now: number,
-): number | null {
+export function evenPaceMarkPercent(window: ServerProviderUsageWindow, now: number): number | null {
   const elapsed = elapsedShare(window, now);
   if (elapsed === null) return null;
   return Math.round((1 - elapsed) * 100);

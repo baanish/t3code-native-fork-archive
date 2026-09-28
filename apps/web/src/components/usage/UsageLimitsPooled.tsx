@@ -156,6 +156,7 @@ function SegmentPopover({
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
   const detail = paceDetail(window, now);
+  const mark = evenPaceMarkPercent(window, now);
   const paceLine = detail ? formatAllowancePace(detail).marker : null;
   const where =
     account.environments.length > 0
@@ -190,7 +191,12 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
         <Row label="Left">{remaining}%</Row>
-        {paceLine ? <Row label="Pace">{paceLine}</Row> : null}
+        {mark !== null ? (
+          <Row label="Pace">
+            {paceLine ? `${paceLine}. ` : null}
+            The line is where even spending would be.
+          </Row>
+        ) : null}
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -261,7 +267,9 @@ function PoolSegment({
             style={{ gridColumn: index, gridRow: 1 }}
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
               paceLine ? `, ${paceLine}` : ""
-            }${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            }${mark !== null ? ", the line is where even spending would be" : ""}${
+              resetsIn ? `, ${resetsIn}` : ""
+            }${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-visible rounded-md bg-transparent text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -290,37 +298,41 @@ function PoolSegment({
         ) : mark !== null ? (
           <EvenPaceHairline percent={mark} />
         ) : null}
-        <span
-          aria-hidden
-          className="absolute inset-0 z-20 flex items-center justify-center text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
-        >
-          {index}
-        </span>
-        <div className="relative z-20 hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
-          {showAccountName ? (
-            <AccountName
-              account={account}
-              className="min-w-0 truncate font-medium text-foreground"
-            />
-          ) : null}
-          <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
-          {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
-          <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs text-foreground tabular-nums">
-            {resetsIn?.replace("resets in ", "↻ ") ?? ""}
-            {credits ? (
-              <>
-                {resetsIn ? (
-                  <span aria-hidden className="text-muted-foreground">
-                    ·
-                  </span>
-                ) : null}
-                <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                  <TicketIcon className="size-3" aria-hidden />
-                  {credits}
-                </span>
-              </>
-            ) : null}
+        <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
+          <span
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+          >
+            {index}
           </span>
+          <div className="hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
+            {showAccountName ? (
+              <AccountName
+                account={account}
+                className="min-w-0 truncate font-medium text-foreground"
+              />
+            ) : null}
+            <span className="shrink-0 font-semibold text-foreground tabular-nums">
+              {remaining}%
+            </span>
+            {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
+            <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs text-foreground tabular-nums">
+              {resetsIn?.replace("resets in ", "↻ ") ?? ""}
+              {credits ? (
+                <>
+                  {resetsIn ? (
+                    <span aria-hidden className="text-muted-foreground">
+                      ·
+                    </span>
+                  ) : null}
+                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                    <TicketIcon className="size-3" aria-hidden />
+                    {credits}
+                  </span>
+                </>
+              ) : null}
+            </span>
+          </div>
         </div>
       </PopoverTrigger>
       <LegendRow account={account} window={window} color={color} now={now} index={index} />
@@ -372,7 +384,6 @@ function LegendRow({
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
     <PopoverTrigger
-      data-account-legend=""
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
       render={<Button variant="ghost" size="compact" />}
       className="min-w-0 @2xl/pool:hidden"

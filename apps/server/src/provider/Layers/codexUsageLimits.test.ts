@@ -58,7 +58,6 @@ describe("codexRateLimitsToLimits", () => {
         kind: "monthly",
         label: "Monthly",
         usedPercent: 80,
-        windowDurationMins: 43_200,
       },
     ]);
   });

@@ -24,7 +24,6 @@ import {
   formatResetsIn,
   limitsNotice,
   paceDetail,
-  paceOf,
   providersWithLimits,
   remainingPercent,
 } from "./usageLimits.ts";
@@ -60,17 +59,17 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
 describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
-    expect(paceOf(window, now)).toBe("under");
-    expect(paceOf({ ...window, usedPercent: 60 }, now)).toBeNull();
+    expect(paceDetail(window, now)?.status).toBe("reserve");
+    expect(paceDetail({ ...window, usedPercent: 60 }, now)).toBeNull();
     expect(evenPaceMarkPercent({ ...window, usedPercent: 60 }, now)).toBe(40);
-    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBeNull();
-    expect(paceOf({ ...window, usedPercent: 63 }, now)).toBe("ahead");
-    expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
+    expect(paceDetail({ ...window, usedPercent: 62 }, now)).toBeNull();
+    expect(paceDetail({ ...window, usedPercent: 63 }, now)?.status).toBe("deficit");
+    expect(paceDetail({ ...window, usedPercent: 80 }, now)?.status).toBe("deficit");
   });
 
   it("has no pace without a reset or a duration", () => {
-    expect(paceOf({ ...window, resetsAt: undefined }, now)).toBeNull();
-    expect(paceOf({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+    expect(paceDetail({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(paceDetail({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
   });
 
@@ -119,7 +118,16 @@ describe("pace", () => {
     expect(formatAllowancePace(paceDetail(session, now)!).marker).toBe("24% in reserve");
   });
 
-  it("averages even-spend gaps across windows that can report pace", () => {
+  it("hides a gap that rounds to two points", () => {
+    // 60% elapsed. used 57.7 is a raw gap of -2.3, which rounds to -2.
+    expect(paceDetail({ ...window, usedPercent: 57.7 }, now)).toBeNull();
+    expect(paceDetail({ ...window, usedPercent: 62.5 }, now)).toMatchObject({
+      status: "deficit",
+      gapPercent: 3,
+    });
+  });
+
+  it("averages even-spend gaps only when every window can report pace", () => {
     const reserve = window;
     const deficit = { ...window, usedPercent: 70 };
     expect(averagePaceDetail([reserve, deficit], now)).toMatchObject({
@@ -129,7 +137,7 @@ describe("pace", () => {
     expect(averagePaceDetail([reserve, { ...window, usedPercent: 80 }], now)).toBeNull();
     expect(
       averagePaceDetail([reserve, { ...deficit, windowDurationMins: undefined }], now),
-    ).toMatchObject({ status: "reserve", gapPercent: -20 });
+    ).toBeNull();
   });
 });
 
@@ -581,11 +589,10 @@ describe("pools", () => {
     // One Codex account: card-level pace is the account's even-spend gap.
     expect(pools[1]?.windows[0]).toMatchObject({
       id: "seven_day",
-      pace: "under",
       paceDetail: { status: "reserve", gapPercent: -7 },
     });
     const [session, week] = pools[0]!.windows;
-    // Two accounts: pace is the mean even-spend gap of windows that report it.
+    // Two accounts: card pace is omitted when one account has no reset.
     const untimed = collectLimitPools(
       collectLimitAccounts(input).map((account) =>
         account.key === "hub:b"
@@ -600,13 +607,11 @@ describe("pools", () => {
       ),
       now,
     );
-    expect(untimed[0]?.windows[0]?.pace).toBeNull();
     expect(untimed[0]?.windows[0]?.paceDetail).toBeNull();
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: "under",
       paceDetail: { status: "reserve", gapPercent: -10 },
     });
     expect(
@@ -619,7 +624,6 @@ describe("pools", () => {
       id: "seven_day",
       remainingPercent: 80,
       members: [{}],
-      pace: "under",
       paceDetail: { status: "reserve", gapPercent: -37 },
     });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
