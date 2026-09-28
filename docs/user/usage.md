@@ -72,12 +72,12 @@ first, or by the first available window when no account reports a 5-hour limit. 
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. When a window includes both a reset time and a
-duration, Limits marks **in reserve** or **in deficit** against even spending, and places a
-green or red tick on the bar at even pace. That comparison is an allowance check, not a forecast.
-Pace is omitted when use is within two points of even pace, the window has barely started, the
-window has already reset, or the provider did not report a duration. When several accounts share
-a card, the pace figure is the average even-spend gap of the accounts that report that
-window. Each segment still has its own tick.
+duration, a hairline on the bar marks even pace. When use is more than two points off that line,
+the hairline becomes a green or red tick and Limits marks **in reserve** or **in deficit**. That
+comparison is an allowance check, not a forecast. The pace figure is omitted when the window has
+barely started, has already reset, or the provider did not report a duration. When several
+accounts share a card, the pace figure is the average even-spend gap of the accounts that report
+that window, so a reserve and a deficit can cancel. Each segment still has its own tick.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
 with banked reset credits show a ticket count and the **Use reset** action in the account details.

@@ -7,6 +7,7 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
+  evenPaceMarkPercent,
   evenPaceRemainingPercent,
   formatAllowancePace,
   formatDuration,
@@ -26,7 +27,7 @@ import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
-import { ResetCredits } from "./UsageLimitsSection";
+import { PaceChip, ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
@@ -86,7 +87,6 @@ function PoolWindowCard({
 }) {
   const navigation = useNavigation();
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
-  const paceReadout = pool.paceDetail ? formatAllowancePace(pool.paceDetail) : null;
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
@@ -113,14 +113,7 @@ function PoolWindowCard({
             <Text className="text-sm text-foreground-muted">left</Text>
           </View>
         </View>
-        {paceReadout ? (
-          <Text
-            className="max-w-[11rem] text-right text-xs text-foreground-tertiary"
-            accessibilityLabel={paceReadout.explanation}
-          >
-            {paceReadout.percent}
-          </Text>
-        ) : null}
+        {pool.paceDetail ? <PaceChip detail={pool.paceDetail} /> : null}
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
       {nextRefill ? (
@@ -133,6 +126,7 @@ function PoolWindowCard({
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
           const rowPace = paceDetail(window, now);
+          const mark = evenPaceMarkPercent(window, now);
           return (
             <Pressable
               key={account.key}
@@ -163,6 +157,12 @@ function PoolWindowCard({
                     top: "-10%",
                     height: "120%",
                   }}
+                />
+              ) : mark !== null ? (
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-y-0 w-px bg-foreground opacity-60"
+                  style={{ left: `${mark}%` }}
                 />
               ) : null}
               <View

@@ -277,8 +277,8 @@ export interface LimitPoolMember {
   readonly window: ServerProviderUsageWindow;
 }
 
-export type LimitPace = "ahead" | "on" | "under";
-export type LimitPaceStatus = "reserve" | "on" | "deficit";
+export type LimitPace = "ahead" | "under";
+export type LimitPaceStatus = "reserve" | "deficit";
 
 /**
  * Even-spend comparison for one window. Positive `gapPercent` is a deficit
@@ -521,9 +521,9 @@ function clampPercent(value: number): number | null {
 }
 
 function paceFromGap(gapPercent: number): { pace: LimitPace; status: LimitPaceStatus } {
-  if (gapPercent > 0) return { pace: "ahead", status: "deficit" };
+  // Callers drop a raw gap inside the dead zone before this, so zero never arrives.
   if (gapPercent < 0) return { pace: "under", status: "reserve" };
-  return { pace: "on", status: "on" };
+  return { pace: "ahead", status: "deficit" };
 }
 
 /**
@@ -579,6 +579,19 @@ export function evenPaceRemainingPercent(detail: LimitPaceDetail): number {
   return Math.round((1 - detail.elapsedShare) * 100);
 }
 
+/**
+ * Even-pace position on the bar, including windows inside the dead zone.
+ * Null when duration or reset cannot place the clock.
+ */
+export function evenPaceMarkPercent(
+  window: ServerProviderUsageWindow,
+  now: number,
+): number | null {
+  const elapsed = elapsedShare(window, now);
+  if (elapsed === null) return null;
+  return Math.round((1 - elapsed) * 100);
+}
+
 export interface LimitPaceReadout {
   readonly marker: string;
   /** Gap only, for the compact icon+percent chip. */
@@ -596,9 +609,6 @@ export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
       break;
     case "deficit":
       marker = `${absGap}% in deficit`;
-      break;
-    case "on":
-      marker = "On pace";
       break;
     default: {
       const _exhaustive: never = detail.status;

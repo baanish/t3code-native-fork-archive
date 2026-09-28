@@ -19,6 +19,7 @@ import {
   averagePaceDetail,
   displayLimitWindows,
   elapsedShare,
+  evenPaceMarkPercent,
   formatAllowancePace,
   formatResetsIn,
   limitsNotice,
@@ -61,6 +62,7 @@ describe("pace", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 60 }, now)).toBeNull();
+    expect(evenPaceMarkPercent({ ...window, usedPercent: 60 }, now)).toBe(40);
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBeNull();
     expect(paceOf({ ...window, usedPercent: 63 }, now)).toBe("ahead");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");

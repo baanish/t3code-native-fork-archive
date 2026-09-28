@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  evenPaceMarkPercent,
   evenPaceRemainingPercent,
   formatAllowancePace,
   formatDuration,
@@ -53,8 +54,6 @@ function paceMarkClass(detail: LimitPaceDetail): string {
       return "bg-success";
     case "deficit":
       return "bg-destructive";
-    case "on":
-      return "bg-white";
     default: {
       const _exhaustive: never = detail.status;
       throw new Error(`Unhandled pace status: ${_exhaustive}`);
@@ -88,6 +87,17 @@ export function ExpectedPaceMark({
   );
 }
 
+/** Neutral mark at even pace when the gap is too small for a colored tick. */
+export function EvenPaceHairline({ percent }: { readonly percent: number }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-y-0 z-10 w-px -translate-x-1/2 bg-foreground/60"
+      style={{ left: `${percent}%` }}
+    />
+  );
+}
+
 /** Icon + gap percent on the existing quota line. Tooltip has the full phrase. */
 export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
   const readout = formatAllowancePace(detail);
@@ -117,8 +127,8 @@ export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
 
 /**
  * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota left. A green or red pill sits at even
- * pace when reserve or deficit is large enough to show.
+ * The fill is the share of quota left. A hairline marks even pace, and
+ * turns green or red when reserve or deficit is large enough to show.
  */
 function WindowBar({
   color,
@@ -132,6 +142,7 @@ function WindowBar({
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
   const detail = paceDetail(window, now);
+  const mark = evenPaceMarkPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
@@ -163,7 +174,11 @@ function WindowBar({
                 />
               ) : null}
             </div>
-            {detail ? <ExpectedPaceMark detail={detail} /> : null}
+            {detail ? (
+              <ExpectedPaceMark detail={detail} />
+            ) : mark !== null ? (
+              <EvenPaceHairline percent={mark} />
+            ) : null}
           </div>
         </div>
       </TooltipTrigger>

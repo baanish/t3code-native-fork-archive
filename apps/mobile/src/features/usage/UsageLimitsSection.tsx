@@ -9,10 +9,12 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
+  evenPaceMarkPercent,
   evenPaceRemainingPercent,
   formatAllowancePace,
   formatDuration,
   formatResetsIn,
+  type LimitPaceDetail,
   limitsNotice,
   paceDetail,
   remainingPercent,
@@ -21,6 +23,7 @@ import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "rea
 import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Pressable, View } from "react-native";
 
+import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
@@ -38,9 +41,29 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
+/** Arrow plus gap percent. The words stay on the accessibility label. */
+export function PaceChip({ detail }: { readonly detail: LimitPaceDetail }) {
+  const readout = formatAllowancePace(detail);
+  return (
+    <View className="flex-row items-center gap-0.5">
+      <SymbolView
+        name={detail.status === "deficit" ? "arrow.up" : "arrow.down"}
+        size={12}
+        tintColorClassName="accent-icon-muted"
+      />
+      <Text
+        className="text-xs tabular-nums text-foreground-tertiary"
+        accessibilityLabel={readout.explanation}
+      >
+        {readout.percent}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
- * a colored pill sits at even pace when reserve or deficit is large enough.
+ * a hairline sits at even pace, and turns green or red past a two-point gap.
  * The pace chip rides the header row; the countdown sits under the bar.
  */
 function WindowRow(props: {
@@ -51,7 +74,7 @@ function WindowRow(props: {
   const { window, now } = props;
   const remaining = remainingPercent(window);
   const detail = paceDetail(window, now);
-  const pace = detail ? formatAllowancePace(detail) : null;
+  const mark = evenPaceMarkPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
@@ -61,14 +84,7 @@ function WindowRow(props: {
           <Text className="text-sm font-t3-medium tabular-nums text-foreground">
             {remaining}% left
           </Text>
-          {pace ? (
-            <Text
-              className="text-xs tabular-nums text-foreground-tertiary"
-              accessibilityLabel={pace.explanation}
-            >
-              {pace.percent}
-            </Text>
-          ) : null}
+          {detail ? <PaceChip detail={detail} /> : null}
         </View>
       </View>
       <View className="h-3.5 justify-center">
@@ -96,6 +112,11 @@ function WindowRow(props: {
                 : "absolute top-0 h-3.5 w-0.5 rounded-full bg-emerald-500"
             }
             style={{ left: `${evenPaceRemainingPercent(detail)}%`, marginLeft: -1 }}
+          />
+        ) : mark !== null ? (
+          <View
+            className="absolute top-1 h-1.5 w-px bg-foreground opacity-60"
+            style={{ left: `${mark}%` }}
           />
         ) : null}
       </View>

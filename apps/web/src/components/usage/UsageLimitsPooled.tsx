@@ -4,6 +4,7 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
+  evenPaceMarkPercent,
   formatAllowancePace,
   formatResetsIn,
   type LimitAccount,
@@ -26,6 +27,7 @@ import { Button } from "../ui/button";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
+  EvenPaceHairline,
   ExpectedPaceMark,
   PaceReadout,
   ResetCreditDialog,
@@ -247,6 +249,7 @@ function PoolSegment({
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   const detail = paceDetail(window, now);
+  const mark = evenPaceMarkPercent(window, now);
   const paceLine = detail ? formatAllowancePace(detail).marker : null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -282,7 +285,11 @@ function PoolSegment({
             />
           ) : null}
         </div>
-        {detail ? <ExpectedPaceMark detail={detail} /> : null}
+        {detail ? (
+          <ExpectedPaceMark detail={detail} />
+        ) : mark !== null ? (
+          <EvenPaceHairline percent={mark} />
+        ) : null}
         <span
           aria-hidden
           className="absolute inset-0 z-20 flex items-center justify-center text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
