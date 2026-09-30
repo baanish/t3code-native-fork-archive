@@ -95,7 +95,7 @@ function WindowBar({
     : null;
   const pace = detail ? formatAllowancePace(detail).marker : null;
   const summary = `${window.label}: ${remaining}% left${pace ? `, ${pace}` : ""}${
-    mark !== null ? ", the line is where even spending would be" : ""
+    mark !== null ? ", expected pace" : ""
   }${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
@@ -140,7 +140,7 @@ function WindowBar({
             </span>
           ) : null}
           {mark !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
+            <span className="text-muted-foreground">Expected pace</span>
           ) : null}
         </div>
       </TooltipPopup>

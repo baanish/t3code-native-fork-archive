@@ -587,11 +587,10 @@ export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
       throw new Error(`Unhandled pace status: ${_exhaustive}`);
     }
   }
-  const expected = Math.round(detail.expectedUsedPercent);
   return {
     marker,
     percent: `${absGap}%`,
-    explanation: `${marker}. Even pace by now is ${expected}% used.`,
+    explanation: `Expected pace. ${marker}.`,
   };
 }
 

@@ -123,8 +123,8 @@ function AccountName({
 
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3">
-      <span className="text-muted-foreground">{label}</span>
+    <div className="grid grid-cols-[6.75rem_minmax(0,1fr)] gap-x-3">
+      <span className="whitespace-nowrap text-muted-foreground">{label}</span>
       <span className="min-w-0 text-foreground tabular-nums">{children}</span>
     </div>
   );
@@ -190,12 +190,7 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
         <Row label="Left">{remaining}%</Row>
-        {mark !== null ? (
-          <Row label="Pace">
-            {paceLine ? `${paceLine}. ` : null}
-            The line is where even spending would be.
-          </Row>
-        ) : null}
+        {mark !== null ? <Row label="Expected pace">{paceLine}</Row> : null}
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -266,7 +261,7 @@ function PoolSegment({
             style={{ gridColumn: index, gridRow: 1 }}
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
               paceLine ? `, ${paceLine}` : ""
-            }${mark !== null ? ", the line is where even spending would be" : ""}${
+            }${mark !== null ? ", expected pace" : ""}${
               resetsIn ? `, ${resetsIn}` : ""
             }${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-visible rounded-md bg-transparent text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
