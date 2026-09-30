@@ -44,14 +44,14 @@ export function barColor(driver: ServerProvider["driver"]): string {
 }
 
 /**
- * Hairline at the share of the window still ahead. `WindowBar` draws it, and
+ * Grey tick, 10% taller than the bar on each side. `WindowBar` draws it, and
  * Usage Limits segments draw this same element.
  */
 export function PaceLine({ percent }: { readonly percent: number }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-y-0.5 z-10 w-px -translate-x-1/2 bg-foreground/60"
+      className="pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full bg-foreground/70 ring-1 ring-background"
       style={{ left: `${percent}%` }}
     />
   );
@@ -115,14 +115,19 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-        {pace.remaining > 0 ? (
-          <div
-            className="absolute inset-y-1.5 left-0 rounded-full"
-            style={{ width: `${pace.remaining}%`, backgroundColor: color }}
-          />
-        ) : null}
-        {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
+        <div className="absolute inset-x-0 inset-y-1.5">
+          <div className="relative h-full">
+            <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+              {pace.remaining > 0 ? (
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${pace.remaining}%`, backgroundColor: color }}
+                />
+              ) : null}
+            </div>
+            {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
+          </div>
+        </div>
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
         <WindowPaceCopy pace={pace} resetsAt={resetsAt} resetsIn={resetsIn} />

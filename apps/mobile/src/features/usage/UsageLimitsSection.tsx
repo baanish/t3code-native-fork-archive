@@ -35,13 +35,13 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
-/** Same hairline as the web composer bar: the share of the window still ahead. */
+/** Grey tick, 10% taller than the bar on each side. Same mark as the web bar. */
 export function PaceLine({ percent }: { readonly percent: number }) {
   return (
     <View
       pointerEvents="none"
-      className="absolute inset-y-0 w-px bg-foreground opacity-60"
-      style={{ left: `${percent}%` }}
+      className="absolute z-10 w-0.5 rounded-full border border-background bg-foreground/70"
+      style={{ left: `${percent}%`, marginLeft: -1, top: "-10%", height: "120%" }}
     />
   );
 }
@@ -68,8 +68,8 @@ function WindowRow(props: {
           </Text>
         </View>
       </View>
-      <View className="h-3.5 justify-center">
-        <View className="relative h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
+      <View className="relative h-3.5 justify-center">
+        <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
           <View
             className={
               pace.remaining <= 10
@@ -84,8 +84,8 @@ function WindowRow(props: {
             ]}
           />
           <View style={{ flex: 100 - pace.remaining }} />
-          {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
         </View>
+        {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
       </View>
       {resetsIn ? (
         <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn}</Text>

@@ -129,7 +129,7 @@ function PoolWindowCard({
               accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${pace.summary}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
-              className="h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-transparent"
+              className="relative h-7 min-w-0 flex-1 overflow-visible rounded-md bg-transparent"
             >
               <View className="absolute inset-0 overflow-hidden rounded-md bg-subtle">
                 <AccountSegment
@@ -137,8 +137,8 @@ function PoolWindowCard({
                   color={color}
                   pending={Boolean(window.resetsAt)}
                 />
-                {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
               </View>
+              {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
               <View
                 pointerEvents="none"
                 className="absolute inset-0 z-20 items-center justify-center"
