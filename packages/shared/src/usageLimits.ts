@@ -1,6 +1,6 @@
 /**
  * Selection and pace maths for the provider limits view, shared by web and
- * mobile so both agree on which providers show, what "ahead of pace" means,
+ * mobile so both agree on which providers show, what reserve or deficit means,
  * and how a reset is phrased.
  *
  * @module usageLimits
@@ -15,7 +15,6 @@ import {
   type ServerProvider,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
-  type UsageLimitSourceSnapshot,
   type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 
@@ -24,6 +23,33 @@ import * as DateTime from "effect/DateTime";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+export const CURSOR_USAGE_WINDOWS = [
+  {
+    id: "totalPercentUsed",
+    label: "Overall",
+    description: "Combined usage across both allowances, not a third quota.",
+  },
+  {
+    id: "autoPercentUsed",
+    label: "Cursor Models",
+    description: "Grok and Composer use this first. Auto can use either pool.",
+  },
+  {
+    id: "apiPercentUsed",
+    label: "Other Models",
+    description: "Claude, GPT, and Gemini use this pool. Grok and Composer fall back here.",
+  },
+] as const;
+
+export function cursorUsageWindowDetails(id: string) {
+  return CURSOR_USAGE_WINDOWS.find((window) => window.id === id);
+}
+
+function cursorUsageWindowRank(id: string): number {
+  const rank = CURSOR_USAGE_WINDOWS.findIndex((window) => window.id === id);
+  return rank < 0 ? CURSOR_USAGE_WINDOWS.length : rank;
+}
 
 /**
  * Providers that belong on the Limits view: enabled, installed, and one whose
@@ -42,108 +68,16 @@ export function providersWithLimits(
   );
 }
 
-export interface LimitsGroup {
-  readonly environmentId: EnvironmentId;
-  /** Null while only one environment is connected; there is nothing to tell apart. */
-  readonly environmentLabel: string | null;
-  readonly providers: readonly ServerProvider[];
-}
-
-/**
- * One group per connected environment with a provider reporting limits.
- * Provider snapshots come from the config stream every client already holds,
- * so opening the view costs no extra request.
- */
-export function collectLimitsGroups(
-  presentations: ReadonlyMap<
-    EnvironmentId,
-    {
-      readonly entry: { readonly target: { readonly label: string } };
-      readonly serverConfig: {
-        readonly providers?: readonly ServerProvider[] | undefined;
-      } | null;
-    }
-  >,
-): readonly LimitsGroup[] {
-  const groups: LimitsGroup[] = [];
-  for (const [environmentId, presentation] of presentations) {
-    const providers = providersWithLimits(presentation.serverConfig?.providers ?? []);
-    if (providers.length === 0) continue;
-    groups.push({ environmentId, environmentLabel: presentation.entry.target.label, providers });
+export type LimitPresentations = ReadonlyMap<
+  EnvironmentId,
+  {
+    readonly entry: { readonly target: { readonly label: string } };
+    readonly serverConfig: {
+      readonly providers?: readonly ServerProvider[] | undefined;
+      readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
+    } | null;
   }
-  return groups.length > 1 ? groups : groups.map((group) => ({ ...group, environmentLabel: null }));
-}
-
-/**
- * Every usage-limit source across connected environments, keyed so two
- * environments pointing at the same hub still get their own rows. The label
- * carries the environment only when more than one environment has sources.
- * A native provider with usable limits takes precedence over the same account
- * in a source, even when it belongs to another connected environment.
- */
-export function collectLimitSources(
-  presentations: ReadonlyMap<
-    EnvironmentId,
-    {
-      readonly entry: { readonly target: { readonly label: string } };
-      readonly serverConfig: {
-        readonly providers?: readonly ServerProvider[] | undefined;
-        readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
-      } | null;
-    }
-  >,
-): ReadonlyArray<
-  UsageLimitSourceSnapshot & {
-    readonly key: string;
-    readonly environmentId: EnvironmentId;
-    readonly hiddenAccountCount: number;
-  }
-> {
-  const nativeAccounts = new Set<string>();
-  for (const presentation of presentations.values()) {
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      const key = accountKey(provider.driver, provider.auth.email);
-      if (
-        key !== null &&
-        provider.usageLimits?.windows.length &&
-        !provider.usageLimits.unavailable
-      ) {
-        nativeAccounts.add(key);
-      }
-    }
-  }
-  const perEnvironment: Array<{
-    readonly environmentId: EnvironmentId;
-    readonly environmentLabel: string;
-    readonly sources: UsageLimitSourceSnapshots;
-  }> = [];
-  for (const [environmentId, presentation] of presentations) {
-    const sources = presentation.serverConfig?.usageLimitSources ?? [];
-    if (sources.length === 0) continue;
-    perEnvironment.push({
-      environmentId,
-      environmentLabel: presentation.entry.target.label,
-      sources,
-    });
-  }
-  const labelEnvironment = perEnvironment.length > 1;
-  return perEnvironment.flatMap(({ environmentId, environmentLabel, sources }) =>
-    sources.map((source) => {
-      const accounts = source.accounts.filter((account) => {
-        const key = accountKey(account.driver, account.email);
-        return key === null || !nativeAccounts.has(key);
-      });
-      return {
-        ...source,
-        accounts,
-        hiddenAccountCount: source.accounts.length - accounts.length,
-        environmentId,
-        key: `${environmentId}:${source.id}`,
-        label: labelEnvironment ? `${environmentLabel} · ${source.label}` : source.label,
-      };
-    }),
-  );
-}
+>;
 
 function accountKey(driver: ServerProvider["driver"], email: string | undefined): string | null {
   const normalizedEmail = email?.trim().toLowerCase();
@@ -184,9 +118,7 @@ export interface LimitAccount {
  * entry per distinct account. The freshest reads supply windows and credits;
  * native instances supply names and environment labels.
  */
-export function collectLimitAccounts(
-  presentations: Parameters<typeof collectLimitSources>[0],
-): readonly LimitAccount[] {
+export function collectLimitAccounts(presentations: LimitPresentations): readonly LimitAccount[] {
   const accounts = new Map<string, LimitAccount>();
   const creditSources = new Map<string, LimitAccount>();
   const hubRedeems = new Map<string, LimitAccount>();
@@ -315,9 +247,7 @@ export function collectLimitAccounts(
  * are left out; there is nothing for the user to act on. The environment
  * is named only when more than one is connected.
  */
-export function collectLimitNotices(
-  presentations: Parameters<typeof collectLimitSources>[0],
-): readonly string[] {
+export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
   const notices: string[] = [];
@@ -348,9 +278,9 @@ export interface LimitPoolMember {
 }
 
 /**
- * One window id across every account that reports it: the pooled share left,
- * pace against the clock, and the resets in the order they will land, each
- * with the share of the pool it hands back.
+ * One window id across every account that reports it: the pooled share left
+ * and the resets in the order they will land, each with the share of the pool
+ * it hands back.
  */
 export interface LimitPoolWindow {
   readonly id: string;
@@ -364,7 +294,6 @@ export interface LimitPoolWindow {
   }>;
   readonly remainingPercent: number;
   readonly usedPercent: number;
-  readonly pace: LimitPace | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -377,6 +306,17 @@ export interface LimitPool {
   readonly driver: ServerProvider["driver"];
   readonly accounts: readonly LimitAccount[];
   readonly windows: readonly LimitPoolWindow[];
+}
+
+/** Show Cursor's two usable pools instead of a combined percentage when both are available. */
+export function displayLimitWindows(pool: LimitPool) {
+  if (pool.driver !== "cursor") return pool.windows;
+  const hasAuto = pool.windows.some((window) => window.id === "autoPercentUsed");
+  const hasApi = pool.windows.some((window) => window.id === "apiPercentUsed");
+  const hasBothPools = hasAuto && hasApi;
+  return pool.windows
+    .filter((window) => !hasBothPools || window.id !== "totalPercentUsed")
+    .sort((left, right) => cursorUsageWindowRank(left.id) - cursorUsageWindowRank(right.id));
 }
 
 const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
@@ -399,10 +339,7 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
  * Missing reset times sort last, with account names and keys breaking ties.
  * Each window's reset list still follows its own clock.
  */
-export function collectLimitPools(
-  accounts: readonly LimitAccount[],
-  now: number,
-): readonly LimitPool[] {
+export function collectLimitPools(accounts: readonly LimitAccount[]): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
     const list = byDriver.get(account.driver);
@@ -425,7 +362,7 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    return { driver, accounts: sorted, windows: poolWindows(sorted) };
   });
 }
 
@@ -433,7 +370,7 @@ function accountSortName(account: LimitAccount): string {
   return (account.displayName ?? account.email ?? account.key).toLowerCase();
 }
 
-function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
+function poolWindows(accounts: readonly LimitAccount[]): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
     for (const window of account.limits.windows) {
@@ -447,16 +384,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Pace compares spend against the clock, so it is judged only over the
-    // members that have a clock; a window with no reset would otherwise
-    // count as spend with no time elapsed and skew the verdict.
-    const timed = members.flatMap((m) => {
-      const share = elapsedShare(m.window, now);
-      return share === null ? [] : [{ used: m.window.usedPercent, elapsed: share }];
-    });
-    const timedUsed = timed.reduce((sum, t) => sum + t.used, 0) / timed.length;
-    const meanElapsed =
-      timed.length > 0 ? timed.reduce((sum, t) => sum + t.elapsed, 0) / timed.length : null;
     const resets = members
       .flatMap((member) => {
         const at = resetMillis(member.window);
@@ -481,7 +408,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
       resets,
     };
   });
@@ -510,32 +436,54 @@ function resetMillis(window: ServerProviderUsageWindow): number | null {
   return Number.isFinite(at) ? at : null;
 }
 
-/** Elapsed share of the window, 0..1, or null when its length or reset is unknown. */
+/**
+ * How far the window has run, 0..1. Needs both a reset and a duration: the
+ * countdown says when it ends, the duration says how long it is. Null when
+ * either is missing, the clock has already reset, or the reset is further
+ * away than the declared length (the window has not started).
+ */
 export function elapsedShare(window: ServerProviderUsageWindow, now: number): number | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null || window.windowDurationMins === undefined) return null;
   const length = window.windowDurationMins * MINUTE;
-  if (length <= 0) return null;
-  return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+  if (length <= 0 || !Number.isFinite(now)) return null;
+  const timeUntilReset = resetsAt - now;
+  if (timeUntilReset <= 0 || timeUntilReset > length) return null;
+  return (length - timeUntilReset) / length;
 }
-
-export type LimitPace = "ahead" | "on" | "under";
 
 /**
- * Usage against the clock. Spending evenly leaves the same share of quota as
- * there is time left in the window; within five points of that counts as on
- * pace, further ahead means the window may run dry first.
+ * Percent of the window still ahead. The fill is quota left, so this is also
+ * where even spending would have put the fill. Null when the clock cannot be
+ * placed.
  */
-export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
+export function timeLeftPercent(window: ServerProviderUsageWindow, now: number): number | null {
   const elapsed = elapsedShare(window, now);
-  return elapsed === null ? null : paceOfShares(window.usedPercent, elapsed);
+  return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
-function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
-  const gap = usedPercent - elapsed * 100;
-  if (gap > 5) return "ahead";
-  if (gap < -5) return "under";
-  return "on";
+/** What the composer bar says about one window. Limits renders this same value. */
+export interface WindowPace {
+  readonly remaining: number;
+  readonly timeLeft: number | null;
+  /** First line of the composer tooltip. */
+  readonly summary: string;
+  /** The sentence under the summary. Null when there is no line. */
+  readonly detail: string | null;
+}
+
+export function describeWindowPace(window: ServerProviderUsageWindow, now: number): WindowPace {
+  const remaining = remainingPercent(window);
+  const timeLeft = timeLeftPercent(window, now);
+  return {
+    remaining,
+    timeLeft,
+    summary:
+      timeLeft === null
+        ? `${remaining}% left`
+        : `${remaining}% left · ${timeLeft}% of the window left`,
+    detail: timeLeft === null ? null : "The line is where even spending would be.",
+  };
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

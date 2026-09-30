@@ -9,14 +9,13 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
-  elapsedShare,
+  describeWindowPace,
   formatDuration,
   formatResetsIn,
   limitsNotice,
-  paceOf,
-  remainingPercent,
 } from "@t3tools/shared/usageLimits";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
+import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -25,8 +24,6 @@ import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useProviderColors } from "./usageProviders";
-
-const PACE_LABEL = { ahead: "ahead of pace", on: "on pace", under: "under pace" } as const;
 
 type Driver = ServerProvider["driver"];
 
@@ -38,11 +35,20 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
+/** Grey tick, 10% taller than the bar on each side. Same mark as the web bar. */
+export function PaceLine({ percent }: { readonly percent: number }) {
+  return (
+    <View
+      pointerEvents="none"
+      className="absolute z-10 w-0.5 rounded-full border border-background bg-foreground/70"
+      style={{ left: `${percent}%`, marginLeft: -1, top: "-10%", height: "120%" }}
+    />
+  );
+}
+
 /**
- * One window as a bar spanning its whole duration: the fill is quota left,
- * the hairline is how much of the window is left, so even spending keeps the
- * fill on the line. Pace sits under the left edge, the countdown under the
- * right, so a row reads in one glance.
+ * One window as a bar spanning its whole duration. The fill is quota left.
+ * The line is how much of the window is left. The countdown sits under the bar.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
@@ -50,48 +56,39 @@ function WindowRow(props: {
   readonly now: number;
 }) {
   const { window, now } = props;
-  const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
-  const pace = paceOf(window, now);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
       <View className="flex-row items-baseline justify-between gap-3">
         <Text className="text-sm text-foreground">{window.label}</Text>
-        <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-          {remaining}% left
-        </Text>
+        <View className="flex-row items-center gap-1.5">
+          <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+            {pace.remaining}% left
+          </Text>
+        </View>
       </View>
-      <View className="h-3 justify-center">
+      <View className="relative h-3.5 justify-center">
         <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
           <View
             className={
-              remaining <= 10
+              pace.remaining <= 10
                 ? "h-full rounded-full bg-red-500"
-                : remaining <= 30
+                : pace.remaining <= 30
                   ? "h-full rounded-full bg-amber-500"
                   : "h-full rounded-full bg-foreground"
             }
             style={[
-              { flex: remaining },
-              remaining > 30 && props.color ? { backgroundColor: props.color } : null,
+              { flex: pace.remaining },
+              pace.remaining > 30 && props.color ? { backgroundColor: props.color } : null,
             ]}
           />
-          <View style={{ flex: 100 - remaining }} />
+          <View style={{ flex: 100 - pace.remaining }} />
         </View>
-        {timeLeft !== null ? (
-          <View
-            className="absolute top-0 bottom-0 w-px bg-foreground"
-            style={{ left: `${timeLeft}%`, opacity: 0.6 }}
-          />
-        ) : null}
+        {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
       </View>
-      {pace || resetsIn ? (
-        <View className="flex-row justify-between gap-3">
-          <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
-          <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
-        </View>
+      {resetsIn ? (
+        <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn}</Text>
       ) : null}
     </View>
   );
@@ -279,47 +276,86 @@ export function ResetCredits(props: {
  * Environments whose probe failed are named, since their rows keep showing
  * the previous quota with nothing else to say so.
  */
-export function useRefreshLimits(selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null) {
+export function useRefreshLimits(
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null,
+  active = false,
+) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const [now, setNow] = useState(() => Date.now());
   const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
   const [failedEnvironments, setFailedEnvironments] = useState<
     readonly { environmentId: EnvironmentId; label: string }[]
   >([]);
-  // Always toggles `refreshing`, even with nothing to probe: Android's
-  // RefreshControl keeps its spinner up until it sees true then false.
-  const refresh = async () => {
+  const refresh = async (automatic = false, afterPending = false) => {
     const connected = [...presentations].filter(
       ([environmentId, presentation]) =>
         presentation.connection.phase === "connected" &&
         (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)),
     );
-    setRefreshing(true);
     try {
-      const results = await Promise.all(
-        connected.map(([environmentId]) => refreshProviders({ environmentId, input: {} })),
-      );
-      setFailedEnvironments(
-        connected
-          .filter((_, index) => results[index]?._tag === "Failure")
-          .map(([environmentId, presentation]) => ({
+      await Promise.all(
+        connected.map(async ([environmentId, presentation]) => {
+          const result = await refreshUsageLimits(
             environmentId,
-            label: presentation.entry.target.label,
-          })),
+            () => refreshProviders({ environmentId, input: {} }),
+            automatic,
+            afterPending,
+          );
+          if (result === undefined) return;
+          setFailedEnvironments((previous) => [
+            ...previous.filter((failed) => failed.environmentId !== environmentId),
+            ...(result._tag === "Failure"
+              ? [{ environmentId, label: presentation.entry.target.label }]
+              : []),
+          ]);
+        }),
       );
     } finally {
       setNow(Date.now());
+    }
+  };
+  // Always toggles `refreshing`, even with nothing to probe: Android's
+  // RefreshControl keeps its spinner up until it sees true then false.
+  const refreshManually = async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
   };
+  const connectedLimitsEnvironments = [...presentations]
+    .filter(
+      ([environmentId, presentation]) =>
+        presentation.connection.phase === "connected" &&
+        (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)),
+    )
+    .map(([environmentId]) => environmentId)
+    .sort()
+    .join(",");
+  const autoRefreshLimits = useEffectEvent(() => refresh(true));
+  useEffect(() => {
+    if (active && connectedLimitsEnvironments) void autoRefreshLimits();
+  }, [active, connectedLimitsEnvironments]);
+
   const failedLabels = failedEnvironments
     .filter(
       ({ environmentId }) =>
         selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId),
     )
     .map(({ label }) => label);
-  return { now, refreshing, failedLabels, refresh };
+  return {
+    now,
+    refreshing,
+    failedLabels,
+    refresh: refreshManually,
+    refreshAfterEnable: () => refresh(false, true),
+  };
 }

@@ -3,7 +3,6 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-  type UsageLimitSourceAccount,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -17,13 +16,13 @@ import {
   collectLimitAccounts,
   collectLimitNotices,
   collectLimitPools,
-  collectLimitSources,
-  collectLimitsGroups,
+  displayLimitWindows,
+  describeWindowPace,
   elapsedShare,
   formatResetsIn,
   limitsNotice,
-  paceOf,
   providersWithLimits,
+  timeLeftPercent,
   remainingPercent,
 } from "./usageLimits.ts";
 
@@ -55,17 +54,16 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
   };
 }
 
-describe("pace", () => {
-  it("places the clock three fifths through a five-hour window with two hours left", () => {
+describe("time left", () => {
+  it("places the line at the share of the window still ahead", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
-    expect(paceOf(window, now)).toBe("under");
-    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
-    expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
+    expect(timeLeftPercent(window, now)).toBe(40);
+    expect(timeLeftPercent({ ...window, usedPercent: 80 }, now)).toBe(40);
   });
 
-  it("has no pace without a reset or a duration", () => {
-    expect(paceOf({ ...window, resetsAt: undefined }, now)).toBeNull();
-    expect(paceOf({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+  it("has no line without a reset or a duration", () => {
+    expect(timeLeftPercent({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(timeLeftPercent({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
   });
 
@@ -77,6 +75,29 @@ describe("pace", () => {
     expect(formatResetsIn({ ...window, resetsAt: "2026-09-03T11:00:00.000Z" }, now)).toBe(
       "resets now",
     );
+  });
+
+  it("omits the line when the reset sits outside the window", () => {
+    expect(timeLeftPercent({ ...window, resetsAt: "2026-09-03T18:00:00.000Z" }, now)).toBeNull();
+    expect(elapsedShare({ ...window, resetsAt: "2026-09-03T17:00:00.000Z" }, now)).toBe(0);
+    expect(timeLeftPercent({ ...window, resetsAt: "2026-09-03T17:00:00.000Z" }, now)).toBe(100);
+  });
+
+  it("rounds the line to the percent of the window still ahead", () => {
+    const session = { ...window, usedPercent: 51, resetsAt: "2026-09-03T13:15:00.000Z" };
+    expect(elapsedShare(session, now)).toBeCloseTo(0.75);
+    expect(timeLeftPercent(session, now)).toBe(25);
+    expect(describeWindowPace(session, now)).toMatchObject({
+      remaining: 49,
+      timeLeft: 25,
+      summary: "49% left · 25% of the window left",
+      detail: "The line is where even spending would be.",
+    });
+    expect(describeWindowPace({ ...window, windowDurationMins: undefined }, now)).toMatchObject({
+      timeLeft: null,
+      summary: "60% left",
+      detail: null,
+    });
   });
 });
 
@@ -126,191 +147,6 @@ describe("providersWithLimits", () => {
         }),
       ]),
     ).toEqual([codex]);
-  });
-});
-
-describe("collectLimitsGroups", () => {
-  it("labels environments only when more than one reports limits", () => {
-    const limits = { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window] };
-    const codex = provider({ usageLimits: limits });
-    const one = new Map([
-      ["env-a", { entry: { target: { label: "Laptop" } }, serverConfig: { providers: [codex] } }],
-      [
-        "env-b",
-        { entry: { target: { label: "Desktop" } }, serverConfig: { providers: [provider({})] } },
-      ],
-    ] as const);
-    expect(collectLimitsGroups(one as never).map((group) => group.environmentLabel)).toEqual([
-      null,
-    ]);
-
-    const two = new Map([
-      ["env-a", { entry: { target: { label: "Laptop" } }, serverConfig: { providers: [codex] } }],
-      ["env-b", { entry: { target: { label: "Desktop" } }, serverConfig: { providers: [codex] } }],
-    ] as const);
-    expect(collectLimitsGroups(two as never).map((group) => group.environmentLabel)).toEqual([
-      "Laptop",
-      "Desktop",
-    ]);
-  });
-});
-
-describe("collectLimitSources", () => {
-  const source = {
-    id: UsageLimitSourceId.make("cliproxy-hub"),
-    kind: "cliproxy" as const,
-    label: "hub",
-    checkedAt: "2026-09-03T11:00:00.000Z",
-    accounts: [],
-  };
-  const limits = { checkedAt: source.checkedAt, windows: [window] };
-  const account: UsageLimitSourceAccount = {
-    id: "codex-personal",
-    driver: ProviderDriverKind.make("codex"),
-    email: "person@example.com",
-    plan: "ChatGPT Pro Subscription",
-    usageLimits: limits,
-  };
-  const native = provider({
-    displayName: "Personal",
-    auth: { status: "authenticated", email: account.email },
-    usageLimits: { ...limits, resetCredits: { availableCount: 2 } },
-  });
-
-  function presentations(
-    providers: readonly ServerProvider[],
-    accounts: readonly UsageLimitSourceAccount[] = [account],
-  ) {
-    return new Map([
-      [
-        EnvironmentId.make("env-a"),
-        {
-          entry: { target: { label: "Laptop" } },
-          serverConfig: { providers, usageLimitSources: [{ ...source, accounts }] },
-        },
-      ],
-    ]);
-  }
-
-  it.each(["codex", "claudeAgent"])(
-    "prefers native %s limits by email without changing provider rows or source snapshots",
-    (kind) => {
-      const driver = ProviderDriverKind.make(kind);
-      const first = { ...native, driver };
-      const second = { ...first, instanceId: ProviderInstanceId.make("work") };
-      const accounts = [{ ...account, driver, email: " Person@Example.COM " }];
-      const input = presentations([first, second], accounts);
-
-      expect(collectLimitSources(input)).toMatchObject([{ accounts: [], hiddenAccountCount: 1 }]);
-      expect(collectLimitsGroups(input)[0]?.providers).toEqual([first, second]);
-      expect(accounts).toHaveLength(1);
-      expect(first.usageLimits?.resetCredits?.availableCount).toBe(2);
-    },
-  );
-
-  it("matches across environments even when the hub is visited before the native provider", () => {
-    const input = presentations([]);
-    input.set(EnvironmentId.make("env-b"), {
-      entry: { target: { label: "Desktop" } },
-      serverConfig: { providers: [native], usageLimitSources: [] },
-    });
-
-    expect(collectLimitSources(input)).toMatchObject([
-      { accounts: [], hiddenAccountCount: 1, environmentId: "env-a" },
-    ]);
-  });
-
-  it("keeps other providers, other emails, and unidentified accounts with the same plan", () => {
-    const accounts = [
-      account,
-      { ...account, id: "other-provider", driver: ProviderDriverKind.make("claudeAgent") },
-      { ...account, id: "other-email", email: "other@example.com" },
-      { ...account, id: "unknown-email", email: undefined },
-    ];
-
-    expect(collectLimitSources(presentations([native], accounts))).toMatchObject([
-      { accounts: accounts.slice(1), hiddenAccountCount: 1 },
-    ]);
-    expect(
-      collectLimitSources(
-        presentations([{ ...native, auth: { status: "authenticated" } }], accounts),
-      )[0]?.accounts,
-    ).toEqual(accounts);
-  });
-
-  it.each([
-    { enabled: false },
-    { installed: false },
-    { availability: "unavailable" },
-    { usageLimits: undefined },
-    { usageLimits: { ...limits, windows: [] } },
-    { usageLimits: { ...limits, unavailable: { reason: "probeFailed" } } },
-    { usageLimits: { ...limits, unavailable: { reason: "unsupported" } } },
-  ] satisfies Partial<ServerProvider>[])(
-    "retains hub limits when the native provider cannot show them: %j",
-    (overrides) => {
-      expect(collectLimitSources(presentations([{ ...native, ...overrides }]))).toMatchObject([
-        { accounts: [account], hiddenAccountCount: 0 },
-      ]);
-    },
-  );
-
-  it("restores the hub account when the matching provider disappears", () => {
-    const input = presentations([native]);
-    expect(collectLimitSources(input)[0]?.accounts).toEqual([]);
-    input.delete(EnvironmentId.make("env-a"));
-    for (const [id, entry] of presentations([])) input.set(id, entry);
-
-    expect(collectLimitSources(input)[0]?.accounts).toEqual([account]);
-  });
-
-  it("keeps source errors and genuinely empty sources distinguishable from hidden accounts", () => {
-    const input = new Map([
-      [
-        EnvironmentId.make("env-a"),
-        {
-          entry: { target: { label: "Laptop" } },
-          serverConfig: {
-            providers: [native],
-            usageLimitSources: [{ ...source, error: "Hub unavailable" }],
-          },
-        },
-      ],
-    ]);
-    expect(collectLimitSources(input)).toMatchObject([
-      { accounts: [], hiddenAccountCount: 0, error: "Hub unavailable" },
-    ]);
-  });
-
-  it("keys sources per environment and names the environment only when several have some", () => {
-    const one = new Map([
-      [
-        "env-a",
-        { entry: { target: { label: "Laptop" } }, serverConfig: { usageLimitSources: [source] } },
-      ],
-      [
-        "env-b",
-        { entry: { target: { label: "Desktop" } }, serverConfig: { usageLimitSources: [] } },
-      ],
-    ] as const);
-    expect(collectLimitSources(one as never).map((entry) => [entry.key, entry.label])).toEqual([
-      ["env-a:cliproxy-hub", "hub"],
-    ]);
-
-    const two = new Map([
-      [
-        "env-a",
-        { entry: { target: { label: "Laptop" } }, serverConfig: { usageLimitSources: [source] } },
-      ],
-      [
-        "env-b",
-        { entry: { target: { label: "Desktop" } }, serverConfig: { usageLimitSources: [source] } },
-      ],
-    ] as const);
-    expect(collectLimitSources(two as never).map((entry) => entry.label)).toEqual([
-      "Laptop · hub",
-      "Desktop · hub",
-    ]);
   });
 });
 
@@ -705,35 +541,19 @@ describe("pools", () => {
         },
       ],
     ]);
-    const pools = collectLimitPools(collectLimitAccounts(input), now);
+    const pools = collectLimitPools(collectLimitAccounts(input));
     expect(pools.map((pool) => [pool.driver, pool.accounts.length])).toEqual([
       ["claudeAgent", 2],
       ["codex", 1],
     ]);
+    expect(pools[1]?.windows[0]).toMatchObject({
+      id: "seven_day",
+    });
     const [session, week] = pools[0]!.windows;
-    // A member with no reset has no clock, so it does not vote on pace.
-    const untimed = collectLimitPools(
-      collectLimitAccounts(input).map((account) =>
-        account.key === "hub:b"
-          ? {
-              ...account,
-              limits: {
-                ...account.limits,
-                windows: account.limits.windows.map((w) => ({ ...w, resetsAt: undefined })),
-              },
-            }
-          : account,
-      ),
-      now,
-    );
-    // Only a votes: 80% used, 80% elapsed.
-    expect(untimed[0]?.windows[0]?.pace).toBe("on");
-    // a is 80% through its window and b 60%: the pool is 70% elapsed, 60% used.
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: "under",
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),
@@ -741,38 +561,39 @@ describe("pools", () => {
       ["hub:a", 40],
       ["hub:b", 20],
     ]);
-    expect(week).toMatchObject({ id: "seven_day", remainingPercent: 80, members: [{}] });
+    expect(week).toMatchObject({
+      id: "seven_day",
+      remainingPercent: 80,
+      members: [{}],
+    });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
-    const mixed = collectLimitPools(
-      [
-        ...collectLimitAccounts(input),
-        {
-          key: "go",
-          driver: claude,
-          displayName: "Go",
-          email: undefined,
-          plan: undefined,
-          accentColor: undefined,
-          environments: [],
-          sourceLabel: null,
-          redeem: null,
-          limits: {
-            checkedAt,
-            windows: [
-              {
-                id: "five_hour",
-                kind: "monthly",
-                label: "Monthly",
-                usedPercent: 82,
-                windowDurationMins: 30 * 24 * 60,
-                resetsAt: "2026-09-14T12:00:00.000Z",
-              },
-            ],
-          },
+    const mixed = collectLimitPools([
+      ...collectLimitAccounts(input),
+      {
+        key: "go",
+        driver: claude,
+        displayName: "Go",
+        email: undefined,
+        plan: undefined,
+        accentColor: undefined,
+        environments: [],
+        sourceLabel: null,
+        redeem: null,
+        limits: {
+          checkedAt,
+          windows: [
+            {
+              id: "five_hour",
+              kind: "monthly",
+              label: "Monthly",
+              usedPercent: 82,
+              windowDurationMins: 30 * 24 * 60,
+              resetsAt: "2026-09-14T12:00:00.000Z",
+            },
+          ],
         },
-      ],
-      now,
-    );
+      },
+    ]);
     expect(mixed[0]?.windows.map((window) => [window.kind, window.members.length])).toEqual([
       ["session", 2],
       ["weekly", 1],
@@ -820,7 +641,7 @@ describe("pooled account columns", () => {
         { ...window, usedPercent: 90, resetsAt: "2026-09-03T13:00:00.000Z" },
       ]),
     ];
-    const [pool] = collectLimitPools(accounts, now);
+    const [pool] = collectLimitPools(accounts);
     expect(pool!.accounts.map((account) => account.key)).toEqual(["b", "a"]);
     expect(keys(pool!)).toEqual([
       ["b", "a"],
@@ -828,21 +649,18 @@ describe("pooled account columns", () => {
     ]);
     expect(pool!.windows[1]!.resets.map((reset) => reset.member.account.key)).toEqual(["a", "b"]);
     expect(pool!.windows[1]!.remainingPercent).toBe(50);
-    expect(keys(collectLimitPools(accounts.toReversed(), now)[0]!)).toEqual(keys(pool!));
+    expect(keys(collectLimitPools(accounts.toReversed())[0]!)).toEqual(keys(pool!));
   });
 
   it("preserves gaps without counting missing windows toward pooled quota", () => {
-    const [pool] = collectLimitPools(
-      [
-        account("a", [window]),
-        account("b", [
-          { ...window, resetsAt: "2026-09-03T15:00:00.000Z" },
-          { ...weekly, usedPercent: 80 },
-        ]),
-        account("c", [weekly]),
-      ],
-      now,
-    );
+    const [pool] = collectLimitPools([
+      account("a", [window]),
+      account("b", [
+        { ...window, resetsAt: "2026-09-03T15:00:00.000Z" },
+        { ...weekly, usedPercent: 80 },
+      ]),
+      account("c", [weekly]),
+    ]);
     expect(keys(pool!)).toEqual([
       ["a", "b", null],
       [null, "b", "c"],
@@ -853,13 +671,10 @@ describe("pooled account columns", () => {
   });
 
   it("falls back to weekly resets when no account reports a session", () => {
-    const [pool] = collectLimitPools(
-      [
-        account("a", [{ ...weekly, resetsAt: "2026-09-06T12:00:00.000Z" }]),
-        account("b", [{ ...weekly, resetsAt: "2026-09-05T12:00:00.000Z" }]),
-      ],
-      now,
-    );
+    const [pool] = collectLimitPools([
+      account("a", [{ ...weekly, resetsAt: "2026-09-06T12:00:00.000Z" }]),
+      account("b", [{ ...weekly, resetsAt: "2026-09-05T12:00:00.000Z" }]),
+    ]);
     expect(keys(pool!)).toEqual([["b", "a"]]);
   });
 
@@ -870,8 +685,50 @@ describe("pooled account columns", () => {
       account("a", [window]),
       account("y", [{ ...window, resetsAt: "invalid" }]),
     ];
-    expect(keys(collectLimitPools(accounts, now)[0]!)).toEqual([["a", "b", "y", "z"]]);
-    expect(keys(collectLimitPools(accounts.toReversed(), now)[0]!)).toEqual([["a", "b", "y", "z"]]);
+    expect(keys(collectLimitPools(accounts)[0]!)).toEqual([["a", "b", "y", "z"]]);
+    expect(keys(collectLimitPools(accounts.toReversed())[0]!)).toEqual([["a", "b", "y", "z"]]);
+  });
+});
+
+describe("Cursor limit presentation", () => {
+  const cursorAccount: LimitAccount = {
+    key: "cursor",
+    driver: ProviderDriverKind.make("cursor"),
+    displayName: "Cursor",
+    email: undefined,
+    plan: undefined,
+    accentColor: undefined,
+    environments: [],
+    sourceLabel: "Cursor",
+    redeem: null,
+    limits: {
+      checkedAt: "2026-09-03T11:00:00.000Z",
+      windows: [
+        { id: "apiPercentUsed", kind: "monthly", label: "Other Models", usedPercent: 49 },
+        { id: "autoPercentUsed", kind: "monthly", label: "Cursor Models", usedPercent: 9 },
+        { id: "totalPercentUsed", kind: "monthly", label: "Overall", usedPercent: 15 },
+      ],
+    },
+  };
+
+  it("hides the combined percentage and orders the two pools", () => {
+    const [pool] = collectLimitPools([cursorAccount]);
+    const display = displayLimitWindows(pool!);
+    expect(display.map((window) => window.id)).toEqual(["autoPercentUsed", "apiPercentUsed"]);
+  });
+
+  it("keeps the combined percentage as a card if either allowance is missing", () => {
+    const [pool] = collectLimitPools([
+      {
+        ...cursorAccount,
+        limits: {
+          ...cursorAccount.limits,
+          windows: cursorAccount.limits.windows.filter((window) => window.id !== "apiPercentUsed"),
+        },
+      },
+    ]);
+    const display = displayLimitWindows(pool!);
+    expect(display.map((window) => window.id)).toEqual(["totalPercentUsed", "autoPercentUsed"]);
   });
 });
 

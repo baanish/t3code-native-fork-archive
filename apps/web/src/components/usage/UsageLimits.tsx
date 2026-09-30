@@ -9,15 +9,13 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  elapsedShare,
+  describeWindowPace,
   formatDuration,
   formatResetsIn,
-  type LimitPace,
-  paceOf,
   remainingPercent,
+  type WindowPace,
 } from "@t3tools/shared/usageLimits";
-import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
@@ -38,12 +36,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
-const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
-  ahead: { label: "Ahead of pace: spending faster than the window elapses", icon: TrendingUpIcon },
-  on: { label: "On pace with the window", icon: GaugeIcon },
-  under: { label: "Under pace: headroom left for the rest of the window", icon: TrendingDownIcon },
-};
-
 /** The series colour the cost chart uses for this driver, so the two views read as one. */
 export function barColor(driver: ServerProvider["driver"]): string {
   const kind: UsageProviderKind | undefined =
@@ -51,32 +43,48 @@ export function barColor(driver: ServerProvider["driver"]): string {
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 
-/** Pace as a glyph with the words on hover. */
-export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
-  const Icon = PACE[pace].icon;
+/**
+ * Grey tick, 10% taller than the bar on each side. `WindowBar` draws it, and
+ * Usage Limits segments draw this same element.
+ */
+export function PaceLine({ percent }: { readonly percent: number }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={PACE[pace].label}
-            className="inline-flex text-muted-foreground"
-          />
-        }
-      >
-        <Icon className="size-3.5" aria-hidden />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{PACE[pace].label}</TooltipPopup>
-    </Tooltip>
+    <span
+      aria-hidden
+      className="pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full bg-foreground/70 ring-1 ring-background"
+      style={{ left: `${percent}%` }}
+    />
+  );
+}
+
+/** The composer tooltip. Usage Limits segment details render this same block. */
+export function WindowPaceCopy({
+  pace,
+  resetsAt,
+  resetsIn,
+}: {
+  readonly pace: WindowPace;
+  readonly resetsAt: string | null;
+  readonly resetsIn: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-foreground">{pace.summary}</span>
+      {pace.detail ? <span className="text-muted-foreground">{pace.detail}</span> : null}
+      {resetsAt ? (
+        <span className="text-muted-foreground">
+          Resets {resetsAt}
+          {resetsIn ? ` · ${resetsIn}` : ""}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
 /**
- * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota spent; the hairline is how far into the
- * window the clock is, which is also where even spending would have put the
- * fill. Hover for the exact figures and reset time.
+ * One window, from open to reset. The fill is quota left. The line is how
+ * much of the window is left, which is where even spending would have put
+ * the fill.
  */
 function WindowBar({
   color,
@@ -88,17 +96,12 @@ function WindowBar({
   readonly now: number;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
-  const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  // The fill is quota left, so the even-spending mark is the time left.
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
     : null;
-  const summary = `${window.label}: ${remaining}% left${
-    timeLeft === null ? "" : `, ${timeLeft}% of the window left`
-  }${resetsIn ? `, ${resetsIn}` : ""}`;
+  const summary = `${window.label}: ${pace.summary}${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
     <Tooltip>
@@ -112,44 +115,30 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-        {remaining > 0 ? (
-          <div
-            className="absolute inset-y-1.5 left-0 rounded-full"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
-          />
-        ) : null}
-        {timeLeft !== null ? (
-          <span
-            aria-hidden
-            className="absolute inset-y-0.5 w-px -translate-x-1/2 bg-foreground/60"
-            style={{ left: `${timeLeft}%` }}
-          />
-        ) : null}
+        <div className="absolute inset-x-0 inset-y-1.5">
+          <div className="relative h-full">
+            <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+              {pace.remaining > 0 ? (
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${pace.remaining}%`, backgroundColor: color }}
+                />
+              ) : null}
+            </div>
+            {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
+          </div>
+        </div>
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-foreground">
-            {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
-          </span>
-          {timeLeft !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
-          ) : null}
-          {resetsAt ? (
-            <span className="text-muted-foreground">
-              Resets {resetsAt}
-              {resetsIn ? ` · ${resetsIn}` : ""}
-            </span>
-          ) : null}
-        </div>
+        <WindowPaceCopy pace={pace} resetsAt={resetsAt} resetsIn={resetsIn} />
       </TooltipPopup>
     </Tooltip>
   );
 }
 
 /**
- * One account's windows as rows: label and percent, bar, pace and countdown.
- * Compact rows fit the composer panel with narrower columns.
+ * One account's windows. Each row is the label, the percent left, the bar,
+ * and the countdown. Compact rows use narrower columns in the composer.
  */
 export function LimitWindows({
   driver,
@@ -168,11 +157,10 @@ export function LimitWindows({
       className={
         compact
           ? "grid grid-cols-[minmax(0,9rem)_minmax(3rem,1fr)_auto] gap-x-3 gap-y-0.5"
-          : "grid grid-cols-[11rem_minmax(0,1fr)_7rem] gap-x-4 gap-y-1"
+          : "grid grid-cols-[11rem_minmax(0,1fr)_minmax(7rem,auto)] gap-x-4 gap-y-1"
       }
     >
       {windows.map((window) => {
-        const pace = paceOf(window, now);
         const resetsIn = formatResetsIn(window, now);
         return (
           <Fragment key={window.id}>
@@ -183,9 +171,8 @@ export function LimitWindows({
               </span>
             </span>
             <WindowBar color={color} window={window} now={now} />
-            <span className="flex items-center gap-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              {pace ? <PaceIcon pace={pace} /> : null}
-              <span className="ms-auto shrink-0">{resetsIn ?? ""}</span>
+            <span className="shrink-0 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              {resetsIn ?? ""}
             </span>
           </Fragment>
         );
@@ -316,20 +303,22 @@ export function ResetCredits({
 
 /**
  * Subscription quota across every connected environment's providers and hubs,
- * pooled per provider. Countdowns anchor to render time rather than ticking: a
- * live clock would repaint the page every minute for no decision-changing gain.
+ * pooled per provider. The page advances `now` on explicit refresh rather than
+ * ticking: a live clock would repaint the page for no decision-changing gain.
  */
 export function UsageLimitsSection({
   selectedEnvironmentIds,
+  now,
+  cursorPrompt,
 }: {
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
+  readonly now: number;
+  readonly cursorPrompt?: ReactNode;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
-  // Anchored once per mount on purpose: countdowns must not tick (see above).
-  const [now] = useState(() => Date.now());
   const selected =
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  return <UsageLimitsPooled presentations={selected} now={now} />;
+  return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
 }

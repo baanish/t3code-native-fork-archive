@@ -81,16 +81,20 @@ function codexRateLimitsToWindows(
   const windows: ServerProviderUsageWindow[] = [];
   for (const [id, window, fallbackMins] of positions) {
     if (!window || !Number.isFinite(window.usedPercent)) continue;
-    const windowDurationMins =
-      typeof window.windowDurationMins === "number" ? window.windowDurationMins : fallbackMins;
-    const kind = kindForDuration(windowDurationMins);
+    // The fallback only names the window. Storing it as a duration would pace
+    // a Free/Go month as if every cycle were 30 days.
+    const reportedMins =
+      typeof window.windowDurationMins === "number" && window.windowDurationMins > 0
+        ? window.windowDurationMins
+        : undefined;
+    const kind = kindForDuration(reportedMins ?? fallbackMins);
     const resetsAt = isoFromEpochSeconds(window.resetsAt);
     windows.push({
       id,
       kind,
       label: labelForKind(kind),
       usedPercent: clampPercent(window.usedPercent),
-      windowDurationMins,
+      ...(reportedMins !== undefined ? { windowDurationMins: reportedMins } : {}),
       ...(resetsAt ? { resetsAt } : {}),
     });
   }
