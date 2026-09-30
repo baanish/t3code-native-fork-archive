@@ -4,15 +4,13 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
-  evenPaceMarkPercent,
-  formatAllowancePace,
   formatResetsIn,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
   type LimitPoolWindow,
-  paceDetail,
   remainingPercent,
+  timeLeftPercent,
 } from "@t3tools/shared/usageLimits";
 import { AlertTriangleIcon, TicketIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -27,8 +25,7 @@ import { Button } from "../ui/button";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
-  EvenPaceHairline,
-  ExpectedPaceMark,
+  PaceLine,
   ResetCreditDialog,
   barColor,
   resetCreditsSummary,
@@ -123,8 +120,8 @@ function AccountName({
 
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[6.75rem_minmax(0,1fr)] gap-x-3">
-      <span className="whitespace-nowrap text-muted-foreground">{label}</span>
+    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3">
+      <span className="text-muted-foreground">{label}</span>
       <span className="min-w-0 text-foreground tabular-nums">{children}</span>
     </div>
   );
@@ -153,10 +150,8 @@ function SegmentPopover({
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
+  const timeLeft = timeLeftPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
-  const detail = paceDetail(window, now);
-  const mark = evenPaceMarkPercent(window, now);
-  const paceLine = detail ? formatAllowancePace(detail).marker : null;
   const where =
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
@@ -190,7 +185,12 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
         <Row label="Left">{remaining}%</Row>
-        {mark !== null ? <Row label="Expected pace">{paceLine}</Row> : null}
+        {timeLeft !== null ? (
+          <>
+            <span className="text-muted-foreground">{timeLeft}% of the window left</span>
+            <span className="text-muted-foreground">The line is where even spending would be.</span>
+          </>
+        ) : null}
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -246,11 +246,9 @@ function PoolSegment({
 }) {
   const [open, setOpen] = useState(false);
   const remaining = remainingPercent(window);
+  const timeLeft = timeLeftPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
-  const detail = paceDetail(window, now);
-  const mark = evenPaceMarkPercent(window, now);
-  const paceLine = detail ? formatAllowancePace(detail).marker : null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -260,10 +258,8 @@ function PoolSegment({
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
-              paceLine ? `, ${paceLine}` : ""
-            }${mark !== null ? ", expected pace" : ""}${
-              resetsIn ? `, ${resetsIn}` : ""
-            }${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+              timeLeft === null ? "" : `, ${timeLeft}% of the window left`
+            }${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-visible rounded-md bg-transparent text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -287,11 +283,7 @@ function PoolSegment({
             />
           ) : null}
         </div>
-        {detail ? (
-          <ExpectedPaceMark detail={detail} />
-        ) : mark !== null ? (
-          <EvenPaceHairline percent={mark} />
-        ) : null}
+        {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
         <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
           <span
             aria-hidden
@@ -596,7 +588,7 @@ export function UsageLimitsPooled({
   readonly now: number;
   readonly cursorPrompt?: ReactNode;
 }) {
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
+  const pools = collectLimitPools(collectLimitAccounts(presentations));
   const notices = collectLimitNotices(presentations);
   const cursorPromptAt =
     Math.max(

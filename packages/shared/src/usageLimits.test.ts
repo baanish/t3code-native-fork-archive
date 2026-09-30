@@ -16,15 +16,12 @@ import {
   collectLimitAccounts,
   collectLimitNotices,
   collectLimitPools,
-  averagePaceDetail,
   displayLimitWindows,
   elapsedShare,
-  evenPaceMarkPercent,
-  formatAllowancePace,
   formatResetsIn,
   limitsNotice,
-  paceDetail,
   providersWithLimits,
+  timeLeftPercent,
   remainingPercent,
 } from "./usageLimits.ts";
 
@@ -56,20 +53,16 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
   };
 }
 
-describe("pace", () => {
-  it("places the clock three fifths through a five-hour window with two hours left", () => {
+describe("time left", () => {
+  it("places the line at the share of the window still ahead", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
-    expect(paceDetail(window, now)?.status).toBe("reserve");
-    expect(paceDetail({ ...window, usedPercent: 60 }, now)).toBeNull();
-    expect(evenPaceMarkPercent({ ...window, usedPercent: 60 }, now)).toBe(40);
-    expect(paceDetail({ ...window, usedPercent: 62 }, now)).toBeNull();
-    expect(paceDetail({ ...window, usedPercent: 63 }, now)?.status).toBe("deficit");
-    expect(paceDetail({ ...window, usedPercent: 80 }, now)?.status).toBe("deficit");
+    expect(timeLeftPercent(window, now)).toBe(40);
+    expect(timeLeftPercent({ ...window, usedPercent: 80 }, now)).toBe(40);
   });
 
-  it("has no pace without a reset or a duration", () => {
-    expect(paceDetail({ ...window, resetsAt: undefined }, now)).toBeNull();
-    expect(paceDetail({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+  it("has no line without a reset or a duration", () => {
+    expect(timeLeftPercent({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(timeLeftPercent({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
   });
 
@@ -83,61 +76,16 @@ describe("pace", () => {
     );
   });
 
-  it("labels reserve and deficit from the used-vs-elapsed gap", () => {
-    expect(paceDetail(window, now)).toMatchObject({ status: "reserve", gapPercent: -20 });
-    expect(paceDetail({ ...window, usedPercent: 80 }, now)).toMatchObject({
-      status: "deficit",
-      gapPercent: 20,
-    });
-    expect(formatAllowancePace(paceDetail(window, now)!).marker).toBe("20% in reserve");
-    expect(formatAllowancePace(paceDetail(window, now)!).percent).toBe("20%");
-    expect(formatAllowancePace(paceDetail({ ...window, usedPercent: 80 }, now)!).marker).toBe(
-      "20% in deficit",
-    );
-  });
-
-  it("hides pace until 3% of the window has elapsed or when reset is outside the duration", () => {
-    expect(paceDetail({ ...window, resetsAt: "2026-09-03T16:55:00.000Z" }, now)).toBeNull();
-    expect(paceDetail({ ...window, resetsAt: "2026-09-03T18:00:00.000Z" }, now)).toBeNull();
+  it("omits the line when the reset sits outside the window", () => {
+    expect(timeLeftPercent({ ...window, resetsAt: "2026-09-03T18:00:00.000Z" }, now)).toBeNull();
     expect(elapsedShare({ ...window, resetsAt: "2026-09-03T17:00:00.000Z" }, now)).toBe(0);
-    expect(
-      paceDetail({ ...window, usedPercent: 12, resetsAt: "2026-09-03T17:00:00.000Z" }, now),
-    ).toBeNull();
+    expect(timeLeftPercent({ ...window, resetsAt: "2026-09-03T17:00:00.000Z" }, now)).toBe(100);
   });
 
-  it("rounds the displayed gap from the absolute delta so reserve halves are not pulled toward zero", () => {
-    // 60.5% elapsed of 300 minutes; used 53% → raw −7.5. JS Math.round(-7.5) is −7.
-    const half = { ...window, usedPercent: 53, resetsAt: "2026-09-03T13:58:30.000Z" };
-    expect(paceDetail(half, now)).toMatchObject({ status: "reserve", gapPercent: -8 });
-    expect(formatAllowancePace(paceDetail(half, now)!).marker).toBe("8% in reserve");
-  });
-
-  it("matches the CodexBar session reserve: 49% left at 75% elapsed is 24% reserve", () => {
+  it("rounds the line to the percent of the window still ahead", () => {
     const session = { ...window, usedPercent: 51, resetsAt: "2026-09-03T13:15:00.000Z" };
     expect(elapsedShare(session, now)).toBeCloseTo(0.75);
-    expect(formatAllowancePace(paceDetail(session, now)!).marker).toBe("24% in reserve");
-  });
-
-  it("hides a gap that rounds to two points", () => {
-    // 60% elapsed. used 57.7 is a raw gap of -2.3, which rounds to -2.
-    expect(paceDetail({ ...window, usedPercent: 57.7 }, now)).toBeNull();
-    expect(paceDetail({ ...window, usedPercent: 62.5 }, now)).toMatchObject({
-      status: "deficit",
-      gapPercent: 3,
-    });
-  });
-
-  it("averages even-spend gaps only when every window can report pace", () => {
-    const reserve = window;
-    const deficit = { ...window, usedPercent: 70 };
-    expect(averagePaceDetail([reserve, deficit], now)).toMatchObject({
-      status: "reserve",
-      gapPercent: -5,
-    });
-    expect(averagePaceDetail([reserve, { ...window, usedPercent: 80 }], now)).toBeNull();
-    expect(
-      averagePaceDetail([reserve, { ...deficit, windowDurationMins: undefined }], now),
-    ).toBeNull();
+    expect(timeLeftPercent(session, now)).toBe(25);
   });
 });
 
@@ -581,38 +529,19 @@ describe("pools", () => {
         },
       ],
     ]);
-    const pools = collectLimitPools(collectLimitAccounts(input), now);
+    const pools = collectLimitPools(collectLimitAccounts(input));
     expect(pools.map((pool) => [pool.driver, pool.accounts.length])).toEqual([
       ["claudeAgent", 2],
       ["codex", 1],
     ]);
-    // One Codex account: card-level pace is the account's even-spend gap.
     expect(pools[1]?.windows[0]).toMatchObject({
       id: "seven_day",
-      paceDetail: { status: "reserve", gapPercent: -7 },
     });
     const [session, week] = pools[0]!.windows;
-    // Two accounts: card pace is omitted when one account has no reset.
-    const untimed = collectLimitPools(
-      collectLimitAccounts(input).map((account) =>
-        account.key === "hub:b"
-          ? {
-              ...account,
-              limits: {
-                ...account.limits,
-                windows: account.limits.windows.map((w) => ({ ...w, resetsAt: undefined })),
-              },
-            }
-          : account,
-      ),
-      now,
-    );
-    expect(untimed[0]?.windows[0]?.paceDetail).toBeNull();
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      paceDetail: { status: "reserve", gapPercent: -10 },
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),
@@ -624,39 +553,35 @@ describe("pools", () => {
       id: "seven_day",
       remainingPercent: 80,
       members: [{}],
-      paceDetail: { status: "reserve", gapPercent: -37 },
     });
     // Codex reports `primary` for both its five-hour and (on Go) monthly window.
-    const mixed = collectLimitPools(
-      [
-        ...collectLimitAccounts(input),
-        {
-          key: "go",
-          driver: claude,
-          displayName: "Go",
-          email: undefined,
-          plan: undefined,
-          accentColor: undefined,
-          environments: [],
-          sourceLabel: null,
-          redeem: null,
-          limits: {
-            checkedAt,
-            windows: [
-              {
-                id: "five_hour",
-                kind: "monthly",
-                label: "Monthly",
-                usedPercent: 82,
-                windowDurationMins: 30 * 24 * 60,
-                resetsAt: "2026-09-14T12:00:00.000Z",
-              },
-            ],
-          },
+    const mixed = collectLimitPools([
+      ...collectLimitAccounts(input),
+      {
+        key: "go",
+        driver: claude,
+        displayName: "Go",
+        email: undefined,
+        plan: undefined,
+        accentColor: undefined,
+        environments: [],
+        sourceLabel: null,
+        redeem: null,
+        limits: {
+          checkedAt,
+          windows: [
+            {
+              id: "five_hour",
+              kind: "monthly",
+              label: "Monthly",
+              usedPercent: 82,
+              windowDurationMins: 30 * 24 * 60,
+              resetsAt: "2026-09-14T12:00:00.000Z",
+            },
+          ],
         },
-      ],
-      now,
-    );
+      },
+    ]);
     expect(mixed[0]?.windows.map((window) => [window.kind, window.members.length])).toEqual([
       ["session", 2],
       ["weekly", 1],
@@ -704,7 +629,7 @@ describe("pooled account columns", () => {
         { ...window, usedPercent: 90, resetsAt: "2026-09-03T13:00:00.000Z" },
       ]),
     ];
-    const [pool] = collectLimitPools(accounts, now);
+    const [pool] = collectLimitPools(accounts);
     expect(pool!.accounts.map((account) => account.key)).toEqual(["b", "a"]);
     expect(keys(pool!)).toEqual([
       ["b", "a"],
@@ -712,21 +637,18 @@ describe("pooled account columns", () => {
     ]);
     expect(pool!.windows[1]!.resets.map((reset) => reset.member.account.key)).toEqual(["a", "b"]);
     expect(pool!.windows[1]!.remainingPercent).toBe(50);
-    expect(keys(collectLimitPools(accounts.toReversed(), now)[0]!)).toEqual(keys(pool!));
+    expect(keys(collectLimitPools(accounts.toReversed())[0]!)).toEqual(keys(pool!));
   });
 
   it("preserves gaps without counting missing windows toward pooled quota", () => {
-    const [pool] = collectLimitPools(
-      [
-        account("a", [window]),
-        account("b", [
-          { ...window, resetsAt: "2026-09-03T15:00:00.000Z" },
-          { ...weekly, usedPercent: 80 },
-        ]),
-        account("c", [weekly]),
-      ],
-      now,
-    );
+    const [pool] = collectLimitPools([
+      account("a", [window]),
+      account("b", [
+        { ...window, resetsAt: "2026-09-03T15:00:00.000Z" },
+        { ...weekly, usedPercent: 80 },
+      ]),
+      account("c", [weekly]),
+    ]);
     expect(keys(pool!)).toEqual([
       ["a", "b", null],
       [null, "b", "c"],
@@ -737,13 +659,10 @@ describe("pooled account columns", () => {
   });
 
   it("falls back to weekly resets when no account reports a session", () => {
-    const [pool] = collectLimitPools(
-      [
-        account("a", [{ ...weekly, resetsAt: "2026-09-06T12:00:00.000Z" }]),
-        account("b", [{ ...weekly, resetsAt: "2026-09-05T12:00:00.000Z" }]),
-      ],
-      now,
-    );
+    const [pool] = collectLimitPools([
+      account("a", [{ ...weekly, resetsAt: "2026-09-06T12:00:00.000Z" }]),
+      account("b", [{ ...weekly, resetsAt: "2026-09-05T12:00:00.000Z" }]),
+    ]);
     expect(keys(pool!)).toEqual([["b", "a"]]);
   });
 
@@ -754,8 +673,8 @@ describe("pooled account columns", () => {
       account("a", [window]),
       account("y", [{ ...window, resetsAt: "invalid" }]),
     ];
-    expect(keys(collectLimitPools(accounts, now)[0]!)).toEqual([["a", "b", "y", "z"]]);
-    expect(keys(collectLimitPools(accounts.toReversed(), now)[0]!)).toEqual([["a", "b", "y", "z"]]);
+    expect(keys(collectLimitPools(accounts)[0]!)).toEqual([["a", "b", "y", "z"]]);
+    expect(keys(collectLimitPools(accounts.toReversed())[0]!)).toEqual([["a", "b", "y", "z"]]);
   });
 });
 
@@ -781,26 +700,21 @@ describe("Cursor limit presentation", () => {
   };
 
   it("hides the combined percentage and orders the two pools", () => {
-    const [pool] = collectLimitPools([cursorAccount], now);
+    const [pool] = collectLimitPools([cursorAccount]);
     const display = displayLimitWindows(pool!);
     expect(display.map((window) => window.id)).toEqual(["autoPercentUsed", "apiPercentUsed"]);
   });
 
   it("keeps the combined percentage as a card if either allowance is missing", () => {
-    const [pool] = collectLimitPools(
-      [
-        {
-          ...cursorAccount,
-          limits: {
-            ...cursorAccount.limits,
-            windows: cursorAccount.limits.windows.filter(
-              (window) => window.id !== "apiPercentUsed",
-            ),
-          },
+    const [pool] = collectLimitPools([
+      {
+        ...cursorAccount,
+        limits: {
+          ...cursorAccount.limits,
+          windows: cursorAccount.limits.windows.filter((window) => window.id !== "apiPercentUsed"),
         },
-      ],
-      now,
-    );
+      },
+    ]);
     const display = displayLimitWindows(pool!);
     expect(display.map((window) => window.id)).toEqual(["totalPercentUsed", "autoPercentUsed"]);
   });

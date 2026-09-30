@@ -277,24 +277,10 @@ export interface LimitPoolMember {
   readonly window: ServerProviderUsageWindow;
 }
 
-export type LimitPaceStatus = "reserve" | "deficit";
-
 /**
- * One window compared with elapsed time. A positive `gapPercent` means more
- * quota used than the elapsed share.
- */
-export interface LimitPaceDetail {
-  readonly status: LimitPaceStatus;
-  /** `usedPercent - expectedUsedPercent`, rounded. Positive is deficit. */
-  readonly gapPercent: number;
-  readonly expectedUsedPercent: number;
-  readonly elapsedShare: number;
-}
-
-/**
- * One window id across every account that reports it: the pooled share left,
- * pace against the clock, and the resets in the order they will land, each
- * with the share of the pool it hands back.
+ * One window id across every account that reports it: the pooled share left
+ * and the resets in the order they will land, each with the share of the pool
+ * it hands back.
  */
 export interface LimitPoolWindow {
   readonly id: string;
@@ -308,11 +294,6 @@ export interface LimitPoolWindow {
   }>;
   readonly remainingPercent: number;
   readonly usedPercent: number;
-  /**
-   * Mean even-spend gap when every account on the card can report one.
-   * A reserve and a deficit can cancel. Null when any account lacks a clock.
-   */
-  readonly paceDetail: LimitPaceDetail | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -358,10 +339,7 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
  * Missing reset times sort last, with account names and keys breaking ties.
  * Each window's reset list still follows its own clock.
  */
-export function collectLimitPools(
-  accounts: readonly LimitAccount[],
-  now: number,
-): readonly LimitPool[] {
+export function collectLimitPools(accounts: readonly LimitAccount[]): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
     const list = byDriver.get(account.driver);
@@ -384,7 +362,7 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    return { driver, accounts: sorted, windows: poolWindows(sorted) };
   });
 }
 
@@ -392,7 +370,7 @@ function accountSortName(account: LimitAccount): string {
   return (account.displayName ?? account.email ?? account.key).toLowerCase();
 }
 
-function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
+function poolWindows(accounts: readonly LimitAccount[]): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
     for (const window of account.limits.windows) {
@@ -406,10 +384,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    const detail = averagePaceDetail(
-      members.map((member) => member.window),
-      now,
-    );
     const resets = members
       .flatMap((member) => {
         const at = resetMillis(member.window);
@@ -434,7 +408,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      paceDetail: detail,
       resets,
     };
   });
@@ -480,117 +453,13 @@ export function elapsedShare(window: ServerProviderUsageWindow, now: number): nu
 }
 
 /**
- * Hide even-spend pace until this share of the window has elapsed. Earlier
- * figures swing on a few minutes of usage and read as false precision.
+ * Percent of the window still ahead. The fill is quota left, so this is also
+ * where even spending would have put the fill. Null when the clock cannot be
+ * placed.
  */
-const PACE_MIN_ELAPSED = 0.03;
-
-/**
- * Hide pace when the displayed whole-point gap is this close to even. A raw
- * gap that rounds to 2 points stays hidden.
- */
-const PACE_DEAD_ZONE = 2;
-
-/**
- * Signed whole-point gap: absolute value first, then round. Rounding the
- * signed gap in JavaScript pulls negative halves toward zero (`-7.5` to `-7`)
- * and understates reserve.
- */
-function displayedPaceGap(delta: number): number {
-  return Math.sign(delta) * Math.round(Math.abs(delta));
-}
-
-function clampPercent(value: number): number | null {
-  if (!Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(100, value));
-}
-
-/**
- * Even-spend comparison for one provider window. The window runs from 0% to
- * 100% used over `windowDurationMins` and ends at `resetsAt`. Expected use
- * is the elapsed share of that span; reserve or deficit is used minus that
- * expected value. Returns null when duration or reset is missing, the reset
- * is outside the window, the clock has barely started, the rounded gap is
- * inside the dead zone, or the used percent is not finite.
- */
-export function paceDetail(window: ServerProviderUsageWindow, now: number): LimitPaceDetail | null {
-  return averagePaceDetail([window], now);
-}
-
-/**
- * Mean even-spend gap. Every window has to report a gap. If one lacks a
- * reset, a duration, or enough elapsed time, the mean is omitted so it
- * describes the same accounts as the pooled quota. The dead zone applies to
- * the rounded mean.
- */
-export function averagePaceDetail(
-  windows: readonly ServerProviderUsageWindow[],
-  now: number,
-): LimitPaceDetail | null {
-  if (windows.length === 0) return null;
-  const parts: { gap: number; elapsed: number; expectedUsedPercent: number }[] = [];
-  for (const window of windows) {
-    const elapsed = elapsedShare(window, now);
-    if (elapsed === null || elapsed < PACE_MIN_ELAPSED) return null;
-    const usedPercent = clampPercent(window.usedPercent);
-    if (usedPercent === null) return null;
-    const expectedUsedPercent = elapsed * 100;
-    parts.push({ gap: usedPercent - expectedUsedPercent, elapsed, expectedUsedPercent });
-  }
-  const n = parts.length;
-  const gapPercent = displayedPaceGap(parts.reduce((sum, part) => sum + part.gap, 0) / n);
-  if (Math.abs(gapPercent) <= PACE_DEAD_ZONE) return null;
-  return {
-    status: gapPercent < 0 ? "reserve" : "deficit",
-    gapPercent,
-    expectedUsedPercent: parts.reduce((sum, part) => sum + part.expectedUsedPercent, 0) / n,
-    elapsedShare: parts.reduce((sum, part) => sum + part.elapsed, 0) / n,
-  };
-}
-
-/** Where the remaining fill would sit if use matched elapsed time, 0..100. */
-export function evenPaceRemainingPercent(detail: LimitPaceDetail): number {
-  return Math.round((1 - detail.elapsedShare) * 100);
-}
-
-/**
- * Even-pace position on the bar, including windows inside the dead zone.
- * Null when duration or reset cannot place the clock.
- */
-export function evenPaceMarkPercent(window: ServerProviderUsageWindow, now: number): number | null {
+export function timeLeftPercent(window: ServerProviderUsageWindow, now: number): number | null {
   const elapsed = elapsedShare(window, now);
-  if (elapsed === null) return null;
-  return Math.round((1 - elapsed) * 100);
-}
-
-export interface LimitPaceReadout {
-  readonly marker: string;
-  /** The gap as a percent, such as `20%`. */
-  readonly percent: string;
-  readonly explanation: string;
-}
-
-/** Reserve or deficit wording for the expected pace tick. */
-export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
-  const absGap = Math.abs(detail.gapPercent);
-  let marker: string;
-  switch (detail.status) {
-    case "reserve":
-      marker = `${absGap}% in reserve`;
-      break;
-    case "deficit":
-      marker = `${absGap}% in deficit`;
-      break;
-    default: {
-      const _exhaustive: never = detail.status;
-      throw new Error(`Unhandled pace status: ${_exhaustive}`);
-    }
-  }
-  return {
-    marker,
-    percent: `${absGap}%`,
-    explanation: `Expected pace, ${marker}.`,
-  };
+  return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

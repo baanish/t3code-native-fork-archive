@@ -7,13 +7,10 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
-  evenPaceMarkPercent,
-  evenPaceRemainingPercent,
-  formatAllowancePace,
   formatDuration,
   formatResetsIn,
-  paceDetail,
   remainingPercent,
+  timeLeftPercent,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
@@ -27,7 +24,7 @@ import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
-import { PaceMark, ResetCredits } from "./UsageLimitsSection";
+import { PaceLine, ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
@@ -124,16 +121,15 @@ function PoolWindowCard({
       <View className="flex-row gap-1">
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
-          const rowPace = paceDetail(window, now);
-          const mark = evenPaceMarkPercent(window, now);
+          const timeLeft = timeLeftPercent(window, now);
           return (
             <Pressable
               key={account.key}
               accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${rowPace ? `, ${formatAllowancePace(rowPace).marker}` : ""}`}
+              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
-              className="h-7 min-w-0 flex-1 overflow-visible rounded-md bg-transparent"
+              className="h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-transparent"
             >
               <View className="absolute inset-0 overflow-hidden rounded-md bg-subtle">
                 <AccountSegment
@@ -141,12 +137,8 @@ function PoolWindowCard({
                   color={color}
                   pending={Boolean(window.resetsAt)}
                 />
+                {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
               </View>
-              {rowPace ? (
-                <PaceMark status={rowPace.status} percent={evenPaceRemainingPercent(rowPace)} />
-              ) : mark !== null ? (
-                <PaceMark status="even" percent={mark} />
-              ) : null}
               <View
                 pointerEvents="none"
                 className="absolute inset-0 z-20 items-center justify-center"
@@ -227,7 +219,7 @@ export function UsageLimitsSection({
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const pools = collectLimitPools(collectLimitAccounts(selected));
   const notices = collectLimitNotices(selected);
   const colors = useProviderColors();
   const cursorPromptAt =
@@ -329,14 +321,12 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
       : new Map([...presentations].filter(([id]) => selectedIds.has(id)));
   const accounts = collectLimitAccounts(selected);
   const account = accounts.find((candidate) => candidate.key === accountKey);
-  const pool = collectLimitPools(accounts, now)
+  const pool = collectLimitPools(accounts)
     .find((candidate) => candidate.driver === account?.driver)
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
-  const accountPaceDetail = window ? paceDetail(window, now) : null;
-  const accountPace =
-    account && window && accountPaceDetail ? formatAllowancePace(accountPaceDetail) : null;
+  const timeLeft = window ? timeLeftPercent(window, now) : null;
   const [revealed, setRevealed] = useState(false);
   return (
     <SettingsScreen title="Account">
@@ -381,13 +371,15 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
-              {accountPace ? (
-                <Text
-                  className="text-sm text-foreground-muted"
-                  accessibilityLabel={accountPace.explanation}
-                >
-                  {accountPace.marker}
-                </Text>
+              {timeLeft !== null ? (
+                <View className="gap-1">
+                  <Text className="text-sm text-foreground-muted">
+                    {timeLeft}% of the window left
+                  </Text>
+                  <Text className="text-sm text-foreground-muted">
+                    The line is where even spending would be.
+                  </Text>
+                </View>
               ) : null}
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">

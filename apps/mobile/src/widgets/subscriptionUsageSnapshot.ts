@@ -49,7 +49,7 @@ function subscriptionUsageProps(
   configuredDrivers: ReadonlySet<string>,
   maxWindowsPerProvider: number,
 ): SubscriptionUsageSnapshot {
-  const pools = collectLimitPools(accounts, now);
+  const pools = collectLimitPools(accounts);
   const checked = accounts
     .filter((account) => account.driver === "codex" || account.driver === "claudeAgent")
     .map((account) => Date.parse(account.limits.checkedAt));

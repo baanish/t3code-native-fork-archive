@@ -9,14 +9,10 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  evenPaceMarkPercent,
-  evenPaceRemainingPercent,
-  formatAllowancePace,
   formatDuration,
   formatResetsIn,
-  type LimitPaceDetail,
-  paceDetail,
   remainingPercent,
+  timeLeftPercent,
 } from "@t3tools/shared/usageLimits";
 import { Fragment, type ReactNode, useState } from "react";
 
@@ -47,33 +43,23 @@ export function barColor(driver: ServerProvider["driver"]): string {
 }
 
 /**
- * Grey tick, 10% taller than the bar on each side. Near-even gaps use the
- * hairline, because `paceDetail` is null.
+ * Hairline at the share of the window still ahead. Composer bars and Usage
+ * Limits segments use this same mark.
  */
-export function ExpectedPaceMark({ detail }: { readonly detail: LimitPaceDetail }) {
+export function PaceLine({ percent }: { readonly percent: number }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full bg-foreground/70 ring-1 ring-background"
-      style={{ left: `${evenPaceRemainingPercent(detail)}%` }}
-    />
-  );
-}
-
-/** Thinner tick when the clock can be placed and `paceDetail` is null. */
-export function EvenPaceHairline({ percent }: { readonly percent: number }) {
-  return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute inset-y-0 z-10 w-px -translate-x-1/2 bg-foreground/60"
+      className="pointer-events-none absolute inset-y-0.5 z-10 w-px -translate-x-1/2 bg-foreground/60"
       style={{ left: `${percent}%` }}
     />
   );
 }
 
 /**
- * One window, from open to reset. The fill is quota left. A grey tick marks
- * expected pace.
+ * One window, from open to reset. The fill is quota left. The line is how
+ * much of the window is left, which is where even spending would have put
+ * the fill.
  */
 function WindowBar({
   color,
@@ -86,15 +72,13 @@ function WindowBar({
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
-  const detail = paceDetail(window, now);
-  const mark = evenPaceMarkPercent(window, now);
+  const timeLeft = timeLeftPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
     : null;
-  const pace = detail ? formatAllowancePace(detail).marker : null;
-  const summary = `${window.label}: ${remaining}% left${pace ? `, ${pace}` : ""}${
-    mark !== null ? ", expected pace" : ""
+  const summary = `${window.label}: ${remaining}% left${
+    timeLeft === null ? "" : `, ${timeLeft}% of the window left`
   }${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
@@ -109,37 +93,28 @@ function WindowBar({
           />
         }
       >
-        <div className="absolute inset-x-0 inset-y-1.5">
-          <div className="relative h-full">
-            <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
-              {remaining > 0 ? (
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{ width: `${remaining}%`, backgroundColor: color }}
-                />
-              ) : null}
-            </div>
-            {detail ? (
-              <ExpectedPaceMark detail={detail} />
-            ) : mark !== null ? (
-              <EvenPaceHairline percent={mark} />
-            ) : null}
-          </div>
-        </div>
+        <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
+        {remaining > 0 ? (
+          <div
+            className="absolute inset-y-1.5 left-0 rounded-full"
+            style={{ width: `${remaining}%`, backgroundColor: color }}
+          />
+        ) : null}
+        {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
       </TooltipTrigger>
-      <TooltipPopup side="top">
+      <TooltipPopup side="top" className="max-w-72 text-xs">
         <div className="flex flex-col gap-0.5">
           <span className="text-foreground">
-            {remaining}% left{pace ? ` · ${pace}` : ""}
+            {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
           </span>
+          {timeLeft !== null ? (
+            <span className="text-muted-foreground">The line is where even spending would be.</span>
+          ) : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
               Resets {resetsAt}
               {resetsIn ? ` · ${resetsIn}` : ""}
             </span>
-          ) : null}
-          {mark !== null ? (
-            <span className="text-muted-foreground">Expected pace</span>
           ) : null}
         </div>
       </TooltipPopup>

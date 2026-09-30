@@ -9,14 +9,11 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
-  evenPaceMarkPercent,
-  evenPaceRemainingPercent,
   formatDuration,
   formatResetsIn,
-  type LimitPaceStatus,
   limitsNotice,
-  paceDetail,
   remainingPercent,
+  timeLeftPercent,
 } from "@t3tools/shared/usageLimits";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
@@ -39,35 +36,20 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
-/** Grey tick on a usage bar. A border keeps it readable on the provider fill. */
-export function PaceMark({
-  status,
-  percent,
-}: {
-  readonly status: LimitPaceStatus | "even";
-  readonly percent: number;
-}) {
-  if (status === "even") {
-    return (
-      <View
-        pointerEvents="none"
-        className="absolute inset-y-0 w-px bg-foreground opacity-60"
-        style={{ left: `${percent}%` }}
-      />
-    );
-  }
+/** Same hairline as the web composer bar: the share of the window still ahead. */
+export function PaceLine({ percent }: { readonly percent: number }) {
   return (
     <View
       pointerEvents="none"
-      className="absolute z-10 w-0.5 rounded-full border border-background bg-foreground/70"
-      style={{ left: `${percent}%`, marginLeft: -1, top: "-10%", height: "120%" }}
+      className="absolute inset-y-0 w-px bg-foreground opacity-60"
+      style={{ left: `${percent}%` }}
     />
   );
 }
 
 /**
- * One window as a bar spanning its whole duration: the fill is quota left,
- * and a grey tick marks even pace. The countdown sits under the bar.
+ * One window as a bar spanning its whole duration. The fill is quota left.
+ * The line is how much of the window is left. The countdown sits under the bar.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
@@ -76,8 +58,7 @@ function WindowRow(props: {
 }) {
   const { window, now } = props;
   const remaining = remainingPercent(window);
-  const detail = paceDetail(window, now);
-  const mark = evenPaceMarkPercent(window, now);
+  const timeLeft = timeLeftPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
@@ -90,7 +71,7 @@ function WindowRow(props: {
         </View>
       </View>
       <View className="h-3.5 justify-center">
-        <View className="h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
+        <View className="relative h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
           <View
             className={
               remaining <= 10
@@ -105,12 +86,8 @@ function WindowRow(props: {
             ]}
           />
           <View style={{ flex: 100 - remaining }} />
+          {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
         </View>
-        {detail ? (
-          <PaceMark status={detail.status} percent={evenPaceRemainingPercent(detail)} />
-        ) : mark !== null ? (
-          <PaceMark status="even" percent={mark} />
-        ) : null}
       </View>
       {resetsIn ? (
         <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn}</Text>

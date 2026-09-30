@@ -71,8 +71,8 @@ kept in the same column across windows. Accounts are ordered by their 5-hour res
 first, or by the first available window when no account reports a 5-hour limit. A gap means the
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. When a window includes a reset time and a
-duration, the bar marks expected pace. The tick compares use so far with the
-elapsed share of the window. Open an account to see reserve or deficit.
+duration, a line on the bar shows how much of the window is left. The line is where even spending
+would be.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
 with banked reset credits show a ticket count and the **Use reset** action in the account details.
