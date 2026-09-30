@@ -47,9 +47,8 @@ export function barColor(driver: ServerProvider["driver"]): string {
 }
 
 /**
- * Thin grey tick on the bar at even pace. It overshoots the track by 10% on
- * each side so it reads as a mark, not a stub. Near-even gaps never reach
- * here. `paceDetail` is already null.
+ * Grey tick, 10% taller than the bar on each side. Near-even gaps use the
+ * hairline, because `paceDetail` is null.
  */
 export function ExpectedPaceMark({ detail }: { readonly detail: LimitPaceDetail }) {
   return (
@@ -61,7 +60,7 @@ export function ExpectedPaceMark({ detail }: { readonly detail: LimitPaceDetail 
   );
 }
 
-/** Neutral mark at even pace when the gap is too small for a colored tick. */
+/** Thinner tick when the clock can be placed and `paceDetail` is null. */
 export function EvenPaceHairline({ percent }: { readonly percent: number }) {
   return (
     <span
@@ -73,8 +72,8 @@ export function EvenPaceHairline({ percent }: { readonly percent: number }) {
 }
 
 /**
- * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota left. A grey tick marks even pace.
+ * One window, from open to reset. The fill is quota left. A grey tick marks
+ * expected pace.
  */
 function WindowBar({
   color,
@@ -149,8 +148,8 @@ function WindowBar({
 }
 
 /**
- * One account's windows as rows: label and percent, bar, pace and countdown.
- * Compact rows fit the composer panel with narrower columns.
+ * One account's windows. Each row is the label, the percent left, the bar,
+ * and the countdown. Compact rows use narrower columns in the composer.
  */
 export function LimitWindows({
   driver,

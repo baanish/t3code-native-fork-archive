@@ -280,9 +280,8 @@ export interface LimitPoolMember {
 export type LimitPaceStatus = "reserve" | "deficit";
 
 /**
- * Even-spend comparison for one window. Positive `gapPercent` is a deficit
- * (more quota used than the clock's share). This is not a forecast of how
- * the remaining quota will be spent.
+ * One window compared with elapsed time. A positive `gapPercent` means more
+ * quota used than the elapsed share.
  */
 export interface LimitPaceDetail {
   readonly status: LimitPaceStatus;
@@ -566,12 +565,12 @@ export function evenPaceMarkPercent(window: ServerProviderUsageWindow, now: numb
 
 export interface LimitPaceReadout {
   readonly marker: string;
-  /** Gap only, for the compact icon+percent chip. */
+  /** The gap as a percent, such as `20%`. */
   readonly percent: string;
   readonly explanation: string;
 }
 
-/** Reserve or deficit copy. Reset forecasts stay out of the line. */
+/** Reserve or deficit wording for the expected pace tick. */
 export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
   const absGap = Math.abs(detail.gapPercent);
   let marker: string;
@@ -590,7 +589,7 @@ export function formatAllowancePace(detail: LimitPaceDetail): LimitPaceReadout {
   return {
     marker,
     percent: `${absGap}%`,
-    explanation: `Expected pace. ${marker}.`,
+    explanation: `Expected pace, ${marker}.`,
   };
 }
 
