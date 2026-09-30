@@ -462,6 +462,30 @@ export function timeLeftPercent(window: ServerProviderUsageWindow, now: number):
   return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
+/** What the composer bar says about one window. Limits renders this same value. */
+export interface WindowPace {
+  readonly remaining: number;
+  readonly timeLeft: number | null;
+  /** First line of the composer tooltip. */
+  readonly summary: string;
+  /** The sentence under the summary. Null when there is no line. */
+  readonly detail: string | null;
+}
+
+export function describeWindowPace(window: ServerProviderUsageWindow, now: number): WindowPace {
+  const remaining = remainingPercent(window);
+  const timeLeft = timeLeftPercent(window, now);
+  return {
+    remaining,
+    timeLeft,
+    summary:
+      timeLeft === null
+        ? `${remaining}% left`
+        : `${remaining}% left · ${timeLeft}% of the window left`,
+    detail: timeLeft === null ? null : "The line is where even spending would be.",
+  };
+}
+
 /** `2h 13m`, `3d 4h`, `12m`. */
 export function formatDuration(ms: number): string {
   const remaining = Math.max(0, ms);

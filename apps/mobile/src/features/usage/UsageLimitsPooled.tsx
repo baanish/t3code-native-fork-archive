@@ -6,11 +6,11 @@ import {
   collectLimitNotices,
   collectLimitPools,
   cursorUsageWindowDetails,
+  describeWindowPace,
   displayLimitWindows,
   formatDuration,
   formatResetsIn,
   remainingPercent,
-  timeLeftPercent,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
@@ -121,23 +121,23 @@ function PoolWindowCard({
       <View className="flex-row gap-1">
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
-          const timeLeft = timeLeftPercent(window, now);
+          const pace = describeWindowPace(window, now);
           return (
             <Pressable
               key={account.key}
               accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
+              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${pace.summary}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
               className="h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-transparent"
             >
               <View className="absolute inset-0 overflow-hidden rounded-md bg-subtle">
                 <AccountSegment
-                  remaining={remainingPercent(window)}
+                  remaining={pace.remaining}
                   color={color}
                   pending={Boolean(window.resetsAt)}
                 />
-                {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
+                {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
               </View>
               <View
                 pointerEvents="none"
@@ -308,6 +308,29 @@ type AccountScreenProps = StaticScreenProps<{
   now: number;
 }>;
 
+function AccountPace({
+  window,
+  now,
+}: {
+  readonly window: Parameters<typeof describeWindowPace>[0];
+  readonly now: number;
+}) {
+  const pace = describeWindowPace(window, now);
+  return (
+    <>
+      <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+        {pace.remaining}% left
+      </Text>
+      {pace.detail ? (
+        <View className="gap-1">
+          <Text className="text-sm text-foreground-muted">{pace.summary}</Text>
+          <Text className="text-sm text-foreground-muted">{pace.detail}</Text>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 /** Resolve the account again so live quota and credit updates reach the open detail screen. */
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
@@ -326,7 +349,6 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
-  const timeLeft = window ? timeLeftPercent(window, now) : null;
   const [revealed, setRevealed] = useState(false);
   return (
     <SettingsScreen title="Account">
@@ -368,19 +390,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
             </View>
             <View className="gap-3 rounded-[24px] border-continuous bg-card p-4">
               <Text className="text-sm font-t3-medium text-foreground">{window.label}</Text>
-              <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-                {remainingPercent(window)}% left
-              </Text>
-              {timeLeft !== null ? (
-                <View className="gap-1">
-                  <Text className="text-sm text-foreground-muted">
-                    {timeLeft}% of the window left
-                  </Text>
-                  <Text className="text-sm text-foreground-muted">
-                    The line is where even spending would be.
-                  </Text>
-                </View>
-              ) : null}
+              <AccountPace window={window} now={now} />
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   Resets{" "}

@@ -17,6 +17,7 @@ import {
   collectLimitNotices,
   collectLimitPools,
   displayLimitWindows,
+  describeWindowPace,
   elapsedShare,
   formatResetsIn,
   limitsNotice,
@@ -86,6 +87,17 @@ describe("time left", () => {
     const session = { ...window, usedPercent: 51, resetsAt: "2026-09-03T13:15:00.000Z" };
     expect(elapsedShare(session, now)).toBeCloseTo(0.75);
     expect(timeLeftPercent(session, now)).toBe(25);
+    expect(describeWindowPace(session, now)).toMatchObject({
+      remaining: 49,
+      timeLeft: 25,
+      summary: "49% left · 25% of the window left",
+      detail: "The line is where even spending would be.",
+    });
+    expect(describeWindowPace({ ...window, windowDurationMins: undefined }, now)).toMatchObject({
+      timeLeft: null,
+      summary: "60% left",
+      detail: null,
+    });
   });
 });
 

@@ -3,6 +3,7 @@ import {
   collectLimitNotices,
   collectLimitPools,
   cursorUsageWindowDetails,
+  describeWindowPace,
   displayLimitWindows,
   formatResetsIn,
   type LimitAccount,
@@ -10,7 +11,6 @@ import {
   type LimitPoolMember,
   type LimitPoolWindow,
   remainingPercent,
-  timeLeftPercent,
 } from "@t3tools/shared/usageLimits";
 import { AlertTriangleIcon, TicketIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -27,6 +27,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   PaceLine,
   ResetCreditDialog,
+  WindowPaceCopy,
   barColor,
   resetCreditsSummary,
   useResetCredit,
@@ -149,9 +150,11 @@ function SegmentPopover({
   readonly onRedeem: () => void;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
-  const remaining = remainingPercent(window);
-  const timeLeft = timeLeftPercent(window, now);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
+  const resetsAt = window.resetsAt
+    ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
+    : null;
   const where =
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
@@ -184,19 +187,7 @@ function SegmentPopover({
         ) : null}
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
-        <Row label="Left">{remaining}%</Row>
-        {timeLeft !== null ? (
-          <>
-            <span className="text-muted-foreground">{timeLeft}% of the window left</span>
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
-          </>
-        ) : null}
-        {window.resetsAt ? (
-          <Row label="Resets">
-            {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
-            {resetsIn ? ` · ${resetsIn.replace("resets in ", "in ")}` : ""}
-          </Row>
-        ) : null}
+        <WindowPaceCopy pace={pace} resetsAt={resetsAt} resetsIn={resetsIn} />
         {reset && reset.restoresPercent > 0 ? (
           <Row label="Restores">+{reset.restoresPercent}% of pool</Row>
         ) : null}
@@ -245,8 +236,7 @@ function PoolSegment({
   readonly showAccountName: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const remaining = remainingPercent(window);
-  const timeLeft = timeLeftPercent(window, now);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
@@ -257,9 +247,9 @@ function PoolSegment({
           <button
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${
-              timeLeft === null ? "" : `, ${timeLeft}% of the window left`
-            }${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${pace.summary}${
+              resetsIn ? `, ${resetsIn}` : ""
+            }${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-visible rounded-md bg-transparent text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -269,21 +259,21 @@ function PoolSegment({
           <div
             aria-hidden
             className="absolute inset-y-0 left-0 rounded-md opacity-35"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
+            style={{ width: `${pace.remaining}%`, backgroundColor: color }}
           />
           {/* The spent share is hatched, not blank: it is what the countdown restores. */}
-          {remaining < 100 && reset ? (
+          {pace.remaining < 100 && reset ? (
             <div
               aria-hidden
               className="absolute inset-y-0 right-0 opacity-20"
               style={{
-                width: `${100 - remaining}%`,
+                width: `${100 - pace.remaining}%`,
                 backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
               }}
             />
           ) : null}
         </div>
-        {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
+        {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
         <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
           <span
             aria-hidden
@@ -299,7 +289,7 @@ function PoolSegment({
               />
             ) : null}
             <span className="shrink-0 font-semibold text-foreground tabular-nums">
-              {remaining}%
+              {pace.remaining}%
             </span>
             {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
             <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs text-foreground tabular-nums">

@@ -9,10 +9,11 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  describeWindowPace,
   formatDuration,
   formatResetsIn,
   remainingPercent,
-  timeLeftPercent,
+  type WindowPace,
 } from "@t3tools/shared/usageLimits";
 import { Fragment, type ReactNode, useState } from "react";
 
@@ -43,8 +44,8 @@ export function barColor(driver: ServerProvider["driver"]): string {
 }
 
 /**
- * Hairline at the share of the window still ahead. Composer bars and Usage
- * Limits segments use this same mark.
+ * Hairline at the share of the window still ahead. `WindowBar` draws it, and
+ * Usage Limits segments draw this same element.
  */
 export function PaceLine({ percent }: { readonly percent: number }) {
   return (
@@ -53,6 +54,30 @@ export function PaceLine({ percent }: { readonly percent: number }) {
       className="pointer-events-none absolute inset-y-0.5 z-10 w-px -translate-x-1/2 bg-foreground/60"
       style={{ left: `${percent}%` }}
     />
+  );
+}
+
+/** The composer tooltip. Usage Limits segment details render this same block. */
+export function WindowPaceCopy({
+  pace,
+  resetsAt,
+  resetsIn,
+}: {
+  readonly pace: WindowPace;
+  readonly resetsAt: string | null;
+  readonly resetsIn: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-foreground">{pace.summary}</span>
+      {pace.detail ? <span className="text-muted-foreground">{pace.detail}</span> : null}
+      {resetsAt ? (
+        <span className="text-muted-foreground">
+          Resets {resetsAt}
+          {resetsIn ? ` · ${resetsIn}` : ""}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -71,15 +96,12 @@ function WindowBar({
   readonly now: number;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
-  const remaining = remainingPercent(window);
-  const timeLeft = timeLeftPercent(window, now);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
     : null;
-  const summary = `${window.label}: ${remaining}% left${
-    timeLeft === null ? "" : `, ${timeLeft}% of the window left`
-  }${resetsIn ? `, ${resetsIn}` : ""}`;
+  const summary = `${window.label}: ${pace.summary}${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
     <Tooltip>
@@ -94,29 +116,16 @@ function WindowBar({
         }
       >
         <div className="absolute inset-x-0 inset-y-1.5 rounded-full bg-muted" />
-        {remaining > 0 ? (
+        {pace.remaining > 0 ? (
           <div
             className="absolute inset-y-1.5 left-0 rounded-full"
-            style={{ width: `${remaining}%`, backgroundColor: color }}
+            style={{ width: `${pace.remaining}%`, backgroundColor: color }}
           />
         ) : null}
-        {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
+        {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
       </TooltipTrigger>
       <TooltipPopup side="top" className="max-w-72 text-xs">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-foreground">
-            {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
-          </span>
-          {timeLeft !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
-          ) : null}
-          {resetsAt ? (
-            <span className="text-muted-foreground">
-              Resets {resetsAt}
-              {resetsIn ? ` · ${resetsIn}` : ""}
-            </span>
-          ) : null}
-        </div>
+        <WindowPaceCopy pace={pace} resetsAt={resetsAt} resetsIn={resetsIn} />
       </TooltipPopup>
     </Tooltip>
   );

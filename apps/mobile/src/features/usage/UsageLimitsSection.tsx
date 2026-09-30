@@ -9,11 +9,10 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
+  describeWindowPace,
   formatDuration,
   formatResetsIn,
   limitsNotice,
-  remainingPercent,
-  timeLeftPercent,
 } from "@t3tools/shared/usageLimits";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
@@ -57,8 +56,7 @@ function WindowRow(props: {
   readonly now: number;
 }) {
   const { window, now } = props;
-  const remaining = remainingPercent(window);
-  const timeLeft = timeLeftPercent(window, now);
+  const pace = describeWindowPace(window, now);
   const resetsIn = formatResetsIn(window, now);
   return (
     <View className="gap-1">
@@ -66,7 +64,7 @@ function WindowRow(props: {
         <Text className="text-sm text-foreground">{window.label}</Text>
         <View className="flex-row items-center gap-1.5">
           <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-            {remaining}% left
+            {pace.remaining}% left
           </Text>
         </View>
       </View>
@@ -74,19 +72,19 @@ function WindowRow(props: {
         <View className="relative h-1.5 flex-row overflow-hidden rounded-full bg-subtle">
           <View
             className={
-              remaining <= 10
+              pace.remaining <= 10
                 ? "h-full rounded-full bg-red-500"
-                : remaining <= 30
+                : pace.remaining <= 30
                   ? "h-full rounded-full bg-amber-500"
                   : "h-full rounded-full bg-foreground"
             }
             style={[
-              { flex: remaining },
-              remaining > 30 && props.color ? { backgroundColor: props.color } : null,
+              { flex: pace.remaining },
+              pace.remaining > 30 && props.color ? { backgroundColor: props.color } : null,
             ]}
           />
-          <View style={{ flex: 100 - remaining }} />
-          {timeLeft !== null ? <PaceLine percent={timeLeft} /> : null}
+          <View style={{ flex: 100 - pace.remaining }} />
+          {pace.timeLeft !== null ? <PaceLine percent={pace.timeLeft} /> : null}
         </View>
       </View>
       {resetsIn ? (
