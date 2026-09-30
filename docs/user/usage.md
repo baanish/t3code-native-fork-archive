@@ -71,9 +71,8 @@ kept in the same column across windows. Accounts are ordered by their 5-hour res
 first, or by the first available window when no account reports a 5-hour limit. A gap means the
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. When a window includes a reset time and a
-duration, Limits compares use with even spending across that window. The figure is an allowance
-check, not a forecast. On a shared card it is the average gap, and only when every account on
-the card can report one, so a reserve and a deficit can cancel.
+duration, a mark on the bar shows where even spending would be. That is an allowance check, not a
+forecast. Open an account to see whether it is in reserve or in deficit.
 Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
 with banked reset credits show a ticket count and the **Use reset** action in the account details.

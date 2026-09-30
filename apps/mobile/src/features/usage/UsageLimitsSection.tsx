@@ -11,10 +11,8 @@ import type {
 import {
   evenPaceMarkPercent,
   evenPaceRemainingPercent,
-  formatAllowancePace,
   formatDuration,
   formatResetsIn,
-  type LimitPaceDetail,
   type LimitPaceStatus,
   limitsNotice,
   paceDetail,
@@ -24,7 +22,6 @@ import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "rea
 import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Pressable, View } from "react-native";
 
-import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
@@ -42,7 +39,7 @@ function useBarColor(driver: Driver): string | null {
   return kind ? colors[kind] : null;
 }
 
-/** Tick on a usage bar. A border keeps the color readable on the provider fill. */
+/** Grey tick on a usage bar. A border keeps it readable on the provider fill. */
 export function PaceMark({
   status,
   percent,
@@ -62,40 +59,15 @@ export function PaceMark({
   return (
     <View
       pointerEvents="none"
-      className={
-        status === "deficit"
-          ? "absolute z-10 w-1 rounded-full border border-background bg-red-500"
-          : "absolute z-10 w-1 rounded-full border border-background bg-emerald-500"
-      }
-      style={{ left: `${percent}%`, marginLeft: -2, top: "-10%", height: "120%" }}
+      className="absolute z-10 w-0.5 rounded-full border border-background bg-foreground/70"
+      style={{ left: `${percent}%`, marginLeft: -1, top: "-10%", height: "120%" }}
     />
-  );
-}
-
-/** Arrow plus gap percent. The words stay on the accessibility label. */
-export function PaceChip({ detail }: { readonly detail: LimitPaceDetail }) {
-  const readout = formatAllowancePace(detail);
-  return (
-    <View className="flex-row items-center gap-0.5">
-      <SymbolView
-        name={detail.status === "deficit" ? "arrow.up" : "arrow.down"}
-        size={12}
-        tintColorClassName="accent-icon-muted"
-      />
-      <Text
-        className="text-xs tabular-nums text-foreground-tertiary"
-        accessibilityLabel={readout.explanation}
-      >
-        {readout.percent}
-      </Text>
-    </View>
   );
 }
 
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
- * a hairline sits at even pace, and turns green or red past a two-point gap.
- * The pace chip rides the header row; the countdown sits under the bar.
+ * and a grey tick marks even pace. The countdown sits under the bar.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
@@ -115,7 +87,6 @@ function WindowRow(props: {
           <Text className="text-sm font-t3-medium tabular-nums text-foreground">
             {remaining}% left
           </Text>
-          {detail ? <PaceChip detail={detail} /> : null}
         </View>
       </View>
       <View className="h-3.5 justify-center">

@@ -18,7 +18,6 @@ import {
   paceDetail,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
-import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
@@ -47,29 +46,16 @@ export function barColor(driver: ServerProvider["driver"]): string {
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 
-function paceMarkClass(detail: LimitPaceDetail): string {
-  switch (detail.status) {
-    case "reserve":
-      return "bg-success";
-    case "deficit":
-      return "bg-destructive";
-    default: {
-      const _exhaustive: never = detail.status;
-      throw new Error(`Unhandled pace status: ${_exhaustive}`);
-    }
-  }
-}
-
 /**
- * Thin tick on the bar at even pace. Green is reserve, red is deficit.
- * It overshoots the track by 10% on each side so it reads as a mark, not a stub.
- * Near-even gaps never reach here. `paceDetail` is already null.
+ * Thin grey tick on the bar at even pace. It overshoots the track by 10% on
+ * each side so it reads as a mark, not a stub. Near-even gaps never reach
+ * here. `paceDetail` is already null.
  */
 export function ExpectedPaceMark({ detail }: { readonly detail: LimitPaceDetail }) {
   return (
     <span
       aria-hidden
-      className={`pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full ring-1 ring-background ${paceMarkClass(detail)}`}
+      className="pointer-events-none absolute top-[-10%] z-10 h-[120%] w-0.5 -translate-x-1/2 rounded-full bg-foreground/70 ring-1 ring-background"
       style={{ left: `${evenPaceRemainingPercent(detail)}%` }}
     />
   );
@@ -86,36 +72,9 @@ export function EvenPaceHairline({ percent }: { readonly percent: number }) {
   );
 }
 
-/** Icon + gap percent on the existing quota line. Tooltip has the full phrase. */
-export function PaceReadout({ detail }: { readonly detail: LimitPaceDetail }) {
-  const readout = formatAllowancePace(detail);
-  const Icon = detail.status === "deficit" ? TrendingUpIcon : TrendingDownIcon;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={readout.explanation}
-            tabIndex={0}
-            className="inline-flex items-center gap-0.5 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          />
-        }
-      >
-        <Icon className="size-3.5 shrink-0" aria-hidden />
-        <span className="tabular-nums">{readout.percent}</span>
-      </TooltipTrigger>
-      <TooltipPopup side="top" className="max-w-72 text-xs">
-        {readout.explanation}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 /**
  * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota left. A hairline marks even pace, and
- * turns green or red when reserve or deficit is large enough to show.
+ * The fill is the share of quota left. A grey tick marks even pace.
  */
 function WindowBar({
   color,
@@ -214,7 +173,6 @@ export function LimitWindows({
       }
     >
       {windows.map((window) => {
-        const detail = paceDetail(window, now);
         const resetsIn = formatResetsIn(window, now);
         return (
           <Fragment key={window.id}>
@@ -225,8 +183,7 @@ export function LimitWindows({
               </span>
             </span>
             <WindowBar color={color} window={window} now={now} />
-            <span className="flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-              {detail ? <PaceReadout detail={detail} /> : null}
+            <span className="shrink-0 self-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
               {resetsIn ?? ""}
             </span>
           </Fragment>

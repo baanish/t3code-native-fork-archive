@@ -29,7 +29,6 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   EvenPaceHairline,
   ExpectedPaceMark,
-  PaceReadout,
   ResetCreditDialog,
   barColor,
   resetCreditsSummary,
@@ -540,11 +539,6 @@ function PoolWindowCard({
             {pool.remainingPercent}%
           </span>
           <span className="text-sm text-muted-foreground">left</span>
-          {pool.paceDetail ? (
-            <span className="self-center">
-              <PaceReadout detail={pool.paceDetail} />
-            </span>
-          ) : null}
         </span>
         {nextRefill && pool.columns.length > 1 ? (
           <span className="text-xs font-medium text-foreground tabular-nums">
